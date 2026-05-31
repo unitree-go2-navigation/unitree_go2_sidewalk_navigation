@@ -8,7 +8,7 @@
       max_linear_velocity_y : 0.45
       max_angular_velocity_z : 0.7
       com_x_translation: 0.0
-      swing_height : 0.04
+      swing_height : 0.05
       stance_depth : 0.01
-      stance_duration : 0.25
+      stance_duration : 0.15
       nominal_height : 0.225

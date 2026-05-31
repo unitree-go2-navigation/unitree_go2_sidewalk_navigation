@@ -8,13 +8,23 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 # Install directories
-install(DIRECTORY 
+install(DIRECTORY
   launch
   models
   worlds
   urdf
   rviz
+  config
   DESTINATION share/${PROJECT_NAME}
+)
+
+# Install Python scripts
+install(PROGRAMS
+  scripts/heading_correction_node.py
+  scripts/capstone_gait_controller.py
+  scripts/verify_joint_order.py
+  scripts/record_lateral_gait_metrics.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()

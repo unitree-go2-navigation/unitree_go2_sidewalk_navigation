@@ -67,6 +67,7 @@ def generate_launch_description():
     )
     declare_world_init_x = DeclareLaunchArgument("world_init_x", default_value="15.0")
     declare_world_init_y = DeclareLaunchArgument("world_init_y", default_value="5.2")
+    # Fixed for the calibrated small_city sidewalk spawn. Do not tune implicitly.
     declare_world_init_z = DeclareLaunchArgument("world_init_z", default_value="1.0")
     declare_world_init_roll = DeclareLaunchArgument("world_init_roll", default_value="0.0")
     declare_world_init_pitch = DeclareLaunchArgument("world_init_pitch", default_value="0.0")
@@ -97,7 +98,12 @@ def generate_launch_description():
         ],
     )
 
-    # CHAMP controller nodes
+    # CHAMP quadruped controller (Position control과 호환)
+    robot_description_for_controller = ParameterValue(
+        Command(['xacro ', LaunchConfiguration('unitree_go2_description_path')]),
+        value_type=str
+    )
+
     quadruped_controller_node = Node(
         package="champ_base",
         executable="quadruped_controller_node",
@@ -108,13 +114,12 @@ def generate_launch_description():
             {"publish_joint_states": True},
             {"publish_joint_control": True},
             {"publish_foot_contacts": False},
-            {"joint_controller_topic": "joint_group_effort_controller/joint_trajectory"},
-            {"urdf": ParameterValue(Command(["xacro ", xacro_file]), value_type=str)},
+            {"joint_controller_topic": "joint_group_controller/commands"},
+            {"urdf": robot_description_for_controller},
             joints_config,
             links_config,
             gait_config,
             {"hardware_connected": False},
-            {"publish_foot_contacts": False},
             {"close_loop_odom": True},
         ],
         remappings=[("/cmd_vel/smooth", "/cmd_vel")],
@@ -127,7 +132,7 @@ def generate_launch_description():
         parameters=[
             {"use_sim_time": use_sim_time},
             {"orientation_from_imu": True},
-            {"urdf": ParameterValue(Command(["xacro ", xacro_file]), value_type=str)},
+            {"urdf": robot_description_for_controller},
             joints_config,
             links_config,
             gait_config,
@@ -141,15 +146,12 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"base_link_frame": base_frame},
+            {"world_frame": base_frame},
+            {"odom0": "odom/raw"},
+            {"imu0": "imu/data"},
             {"use_sim_time": use_sim_time},
-            os.path.join(
-                get_package_share_directory("champ_base"),
-                "config",
-                "ekf",
-                "base_to_footprint.yaml",
-            ),
         ],
-        remappings=[("odometry/filtered", "odom/local")],
+        remappings=[("odometry/filtered", "odom/filtered")],
     )
 
     footprint_to_odom_ekf = Node(
@@ -158,19 +160,12 @@ def generate_launch_description():
         name="footprint_to_odom_ekf",
         output="screen",
         parameters=[
-            {"use_sim_time": use_sim_time},
             {"base_link_frame": "base_footprint"},
-            {"odom_frame": "odom"},
             {"world_frame": "odom"},
-            {"publish_tf": True},
-            {"frequency": 50.0},
-            {"two_d_mode": True},
-            {"odom0": "odom/raw"},
-            {"odom0_config": [False, False, False, False, False, False, True, True, False, False, False, True, False, False, False]},
-            {"imu0": "imu/data"},
-            {"imu0_config": [False, False, False, False, False, True, False, False, False, False, False, True, False, False, False]},
+            {"odom0": "odom/filtered"},
+            {"use_sim_time": use_sim_time},
         ],
-        remappings=[("odometry/filtered", "odom")],
+        remappings=[("odometry/filtered", "odometry/local")],
     )
 
     # Go2 static frame connection (map -> odom)
@@ -199,6 +194,21 @@ def generate_launch_description():
         ],
     )
 
+    # heading_correction_node는 go_sim controller에서 불필요 (자체 제어)
+    # heading_correction_node = Node(
+    #     package='go2_simulation',
+    #     executable='heading_correction_node.py',
+    #     name='heading_correction_node',
+    #     output='screen',
+    #     parameters=[
+    #         {'use_sim_time': use_sim_time},
+    #         {'kp': 2.0},
+    #         {'ki': 0.1},
+    #         {'kd': 0.5},
+    #         {'max_correction': 0.3},
+    #     ],
+    # )
+
     rviz2 = Node(
         package='rviz2',
         executable='rviz2',
@@ -224,7 +234,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
         launch_arguments={
-            'gz_args': [LaunchConfiguration('world'), ' -r']  # Add -r flag to start unpaused
+            'gz_args': [LaunchConfiguration('world'), ' -r']
         }.items(),
     )
 
@@ -266,21 +276,23 @@ def generate_launch_description():
 
             # ROS to Gazebo
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
-            '/joint_group_effort_controller/joint_trajectory@trajectory_msgs/msg/JointTrajectory]gz.msgs.JointTrajectory',
+            '/joint_group_controller/commands@std_msgs/msg/Float64MultiArray]gz.msgs.Double_V',
         ],
     )
 
     # Use spawner nodes directly to handle the configuration step. (load → configure → activate)
+    # Note: controller_manager는 전역 namespace에 있음 (namespace 제거)
+    # Spawner will wait internally (--controller-manager-timeout) until controller_manager is ready
     controller_spawner_js = TimerAction(
-        period=20.0,  # Wait for Gazebo to fully initialize
+        period=3.0,  # Start early, spawner waits internally for controller_manager
         actions=[
             Node(
                 package="controller_manager",
                 executable="spawner",
                 output="screen",
                 arguments=[
-                    "--controller-manager-timeout", "120",  # Longer timeout
-                    "joint_states_controller",  # No --inactive flag to ensure full activation
+                    "--controller-manager-timeout", "120",
+                    "joint_state_broadcaster",
                 ],
                 parameters=[{"use_sim_time": use_sim_time}],
             )
@@ -288,15 +300,15 @@ def generate_launch_description():
     )
 
     controller_spawner_effort = TimerAction(
-        period=30.0,  # Wait 5 seconds after joint_states_controller
+        period=3.0,  # Start early, spawner waits internally for controller_manager
         actions=[
             Node(
                 package="controller_manager",
                 executable="spawner",
                 output="screen",
                 arguments=[
-                    "--controller-manager-timeout", "120",  # Longer timeout
-                    "joint_group_effort_controller",  # No --inactive flag to ensure full activation
+                    "--controller-manager-timeout", "120",
+                    "joint_group_controller",
                 ],
                 parameters=[{"use_sim_time": use_sim_time}],
             )
@@ -305,7 +317,7 @@ def generate_launch_description():
 
     # Shell script to manually check controller status
     controller_status_check = TimerAction(
-        period=25.0,  # Check status after controllers should be loaded
+        period=15.0,  # Check status after controllers should be loaded
         actions=[
             ExecuteProcess(
                 cmd=["bash", "-c", "echo 'Checking controller status:' && ros2 control list_controllers"],

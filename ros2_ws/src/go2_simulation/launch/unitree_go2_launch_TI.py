@@ -106,7 +106,7 @@ def generate_launch_description():
             {"publish_joint_states": True},
             {"publish_joint_control": True},
             {"publish_foot_contacts": False},
-            {"joint_controller_topic": "joint_group_effort_controller/joint_trajectory"},
+            {"joint_controller_topic": "joint_group_controller/commands"},
             {"urdf": ParameterValue(Command(["xacro ", xacro_file]), value_type=str)},
             joints_config,
             links_config,
@@ -260,7 +260,7 @@ def generate_launch_description():
             
             # ROS to Gazebo
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
-            '/joint_group_effort_controller/joint_trajectory@trajectory_msgs/msg/JointTrajectory]gz.msgs.JointTrajectory',
+            '/joint_group_controller/commands@std_msgs/msg/Float64MultiArray]gz.msgs.Double_V',
         ],
     )
     
@@ -274,7 +274,7 @@ def generate_launch_description():
                 output="screen",
                 arguments=[
                     "--controller-manager-timeout", "120",  # Longer timeout
-                    "joint_states_controller",  # No --inactive flag to ensure full activation
+                    "joint_state_broadcaster",  # No --inactive flag to ensure full activation
                 ],
                 parameters=[{"use_sim_time": use_sim_time}],
             )
@@ -282,7 +282,7 @@ def generate_launch_description():
     )
 
     controller_spawner_effort = TimerAction(
-        period=30.0,  # Wait 5 seconds after joint_states_controller
+        period=30.0,  # Wait 5 seconds after joint_state_broadcaster
         actions=[
             Node(
                 package="controller_manager",
@@ -290,7 +290,7 @@ def generate_launch_description():
                 output="screen",
                 arguments=[
                     "--controller-manager-timeout", "120",  # Longer timeout
-                    "joint_group_effort_controller",  # No --inactive flag to ensure full activation
+                    "joint_group_controller",  # No --inactive flag to ensure full activation
                 ],
                 parameters=[{"use_sim_time": use_sim_time}],
             )

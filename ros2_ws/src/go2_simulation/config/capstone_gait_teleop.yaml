@@ -1,0 +1,50 @@
+capstone_gait_controller:
+  ros__parameters:
+    use_sim_time: true
+
+    cmd_vel_topic: /cmd_vel
+    controller_topic: /joint_group_controller/commands
+    odom_topic: /odom
+    sport_mode_topic: /go2_sim/sport_mode_request
+    reset_topic: /go2_sim/reset_request
+    api_sport_topic: /api/sport/request
+
+    publish_rate: 150.0
+    command_timeout: 0.6
+    auto_walk_on_cmd: true
+
+    max_linear_speed: 0.20
+    max_lateral_speed: 0.08
+    max_angular_speed: 0.35
+    linear_accel_limit: 0.28
+    lateral_accel_limit: 0.16
+    angular_accel_limit: 0.45
+    linear_decel_limit: 0.45
+    lateral_decel_limit: 0.30
+    angular_decel_limit: 0.70
+
+    base_frequency: 0.55
+    frequency_gain: 0.25
+    stride_scale: 0.040
+    lateral_stride_scale: 0.030
+    turn_scale: 0.025
+    lift_scale: 0.030
+    hip_sway_scale: 0.012
+
+    stand_hip: 0.0
+    stand_thigh: 0.67
+    stand_calf: -1.30
+    sit_hip: 0.0
+    sit_thigh: 1.10
+    sit_calf: -2.00
+    lie_hip: 0.0
+    lie_thigh: 1.35
+    lie_calf: -2.35
+
+    heading_hold_enabled: true
+    heading_hold_kp: 1.0
+    heading_hold_kd: 0.10
+    heading_hold_deadband_deg: 2.0
+    heading_hold_max_yaw_cmd: 0.08
+    heading_hold_lateral_threshold: 0.01
+    heading_hold_yaw_threshold: 0.01
