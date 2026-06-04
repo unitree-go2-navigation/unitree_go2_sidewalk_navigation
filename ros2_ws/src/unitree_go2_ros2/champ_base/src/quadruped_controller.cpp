@@ -73,7 +73,10 @@ QuadrupedController::QuadrupedController():
     
     if(publish_joint_control_)
     {
-        joint_commands_publisher_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(joint_control_topic, 10);
+        // Position control을 위한 Float64MultiArray publisher만 사용
+        joint_group_position_publisher_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/joint_group_controller/commands", 10);
+        // JointTrajectory publisher는 주석 처리 (Position control과 충돌)
+        // joint_commands_publisher_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(joint_control_topic, 10);
     }
 
     if(publish_joint_states_ && !in_gazebo_)
@@ -143,27 +146,36 @@ void QuadrupedController::cmdPoseCallback_(const geometry_msgs::msg::Pose::Share
 }
 
 void QuadrupedController::publishJoints_(float target_joints[12])
-{   
+{
     if(publish_joint_control_)
     {
-        trajectory_msgs::msg::JointTrajectory joints_cmd_msg;
-        joints_cmd_msg.header.stamp = clock_.now();
-        joints_cmd_msg.header.stamp.sec = 0;
-        joints_cmd_msg.header.stamp.nanosec = 0;
-        
-        joints_cmd_msg.joint_names = joint_names_;
-
-        trajectory_msgs::msg::JointTrajectoryPoint point;
-        point.positions.resize(12);
-
-        point.time_from_start = rclcpp::Duration::from_seconds(1.0 / 60.0);
+        // Float64MultiArray 발행 (Position control용)
+        // CHAMP 출력: LF[0-2], RF[3-5], LH[6-8], RH[9-11]
+        // ros_control.yaml 순서: RF[0-2], LF[3-5], RH[6-8], LH[9-11]
+        static const int reorder[12] = {3,4,5, 0,1,2, 9,10,11, 6,7,8};
+        std_msgs::msg::Float64MultiArray position_cmd_msg;
+        position_cmd_msg.data.resize(12);
         for(size_t i = 0; i < 12; i++)
         {
-            point.positions[i] = target_joints[i];
+            position_cmd_msg.data[i] = target_joints[reorder[i]];
         }
+        joint_group_position_publisher_->publish(position_cmd_msg);
 
-        joints_cmd_msg.points.push_back(point);
-        joint_commands_publisher_->publish(joints_cmd_msg);
+        // JointTrajectory는 주석 처리 (Position control과 충돌)
+        // trajectory_msgs::msg::JointTrajectory joints_cmd_msg;
+        // joints_cmd_msg.header.stamp = clock_.now();
+        // joints_cmd_msg.header.stamp.sec = 0;
+        // joints_cmd_msg.header.stamp.nanosec = 0;
+        // joints_cmd_msg.joint_names = joint_names_;
+        // trajectory_msgs::msg::JointTrajectoryPoint point;
+        // point.positions.resize(12);
+        // point.time_from_start = rclcpp::Duration::from_seconds(1.0 / 60.0);
+        // for(size_t i = 0; i < 12; i++)
+        // {
+        //     point.positions[i] = target_joints[i];
+        // }
+        // joints_cmd_msg.points.push_back(point);
+        // joint_commands_publisher_->publish(joints_cmd_msg);
     }
 
     if(publish_joint_states_ && !in_gazebo_)
