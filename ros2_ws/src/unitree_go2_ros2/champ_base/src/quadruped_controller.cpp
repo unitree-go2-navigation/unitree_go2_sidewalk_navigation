@@ -149,12 +149,15 @@ void QuadrupedController::publishJoints_(float target_joints[12])
 {
     if(publish_joint_control_)
     {
-        // Float64MultiArray 메시지 발행 (Position control용)
+        // Float64MultiArray 발행 (Position control용)
+        // CHAMP 출력: LF[0-2], RF[3-5], LH[6-8], RH[9-11]
+        // ros_control.yaml 순서: RF[0-2], LF[3-5], RH[6-8], LH[9-11]
+        static const int reorder[12] = {3,4,5, 0,1,2, 9,10,11, 6,7,8};
         std_msgs::msg::Float64MultiArray position_cmd_msg;
         position_cmd_msg.data.resize(12);
         for(size_t i = 0; i < 12; i++)
         {
-            position_cmd_msg.data[i] = target_joints[i];
+            position_cmd_msg.data[i] = target_joints[reorder[i]];
         }
         joint_group_position_publisher_->publish(position_cmd_msg);
 

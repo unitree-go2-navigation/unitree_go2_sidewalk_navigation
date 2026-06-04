@@ -5485,5 +5485,43 @@
       <uri>model://suv</uri>
     </include>
 
+    <actor name="pedestrian_on_sidewalk16">
+      <skin>
+        <filename>model://actor_walking/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>model://actor_walking/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>0.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" tension="0.6">
+          <waypoint>
+            <time>0</time>
+            <pose>-5 5.2 1.15 0 0 0</pose>
+          </waypoint>
+          <waypoint>
+            <time>50</time>
+            <pose>20 5.2 1.15 0 0 0</pose>
+          </waypoint>
+          <waypoint>
+            <time>50.01</time>
+            <pose>20 5.2 1.15 0 0 3.141593</pose>
+          </waypoint>
+          <waypoint>
+            <time>100.01</time>
+            <pose>-5 5.2 1.15 0 0 3.141593</pose>
+          </waypoint>
+          <waypoint>
+            <time>100.02</time>
+            <pose>-5 5.2 1.15 0 0 0</pose>
+          </waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
   </world>
 </sdf>
