@@ -16,6 +16,7 @@ find_package(tf2_ros REQUIRED)
 find_package(urdf REQUIRED)
 find_package(champ REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(std_msgs REQUIRED)
 
 
 set(dependencies
@@ -25,6 +26,7 @@ set(dependencies
   visualization_msgs
   geometry_msgs
   sensor_msgs
+  std_msgs
   trajectory_msgs
   nav_msgs
   tf2_ros
