@@ -1,0 +1,13 @@
+# 빈 인도 (false stop 게이트): 장애물 없는 30초 직진 — STOP 0회 + 진행 확인.
+name: empty
+actors: []
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.3, 0.0]]
+settle_time: 8.0
+duration: 30.0
+criteria:
+  max_collisions: 0
+  max_stop_entries: 0
+  min_travel_m: 6.0
+  forbid_states: [ESTOP]

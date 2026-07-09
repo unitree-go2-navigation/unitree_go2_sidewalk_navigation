@@ -60,3 +60,6 @@ venv/
 # Claude Code 로컬 설정 / 브라우저 MCP 산출물
 .claude/
 .playwright-mcp/
+
+# 시나리오 러너 per-run 산출물
+verification/runs/

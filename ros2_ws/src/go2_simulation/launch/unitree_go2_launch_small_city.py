@@ -320,7 +320,14 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
         launch_arguments={
-            'gz_args': [LaunchConfiguration('world'), ' -r']
+            # gui:=false → server-only(-s). GPU 센서는 DISPLAY(GLX)로 렌더.
+            # (--headless-rendering(EGL)은 이 머신에서 서버 행 유발 — 사용 금지)
+            'gz_args': [
+                LaunchConfiguration('world'),
+                PythonExpression(
+                    ["' -r -s' if '",
+                     LaunchConfiguration('gui'), "' == 'false' else ' -r'"]),
+            ]
         }.items(),
     )
 

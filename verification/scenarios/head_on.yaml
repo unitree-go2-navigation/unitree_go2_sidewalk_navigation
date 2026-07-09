@@ -1,0 +1,19 @@
+# 정면 접근: 보행자가 로봇을 향해 걸어옴(0.5m/s) → 상대속도 TTC로 STOP.
+# loop=false 궤적은 마지막 waypoint에서 정지(유지 세그먼트 불필요 — 퇴화 궤적 금지).
+name: head_on
+actors:
+  - name: ped_head_on
+    loop: false
+    waypoints:            # [t, x, y, yaw] — x=4→10 후 그 자리에 정지
+      - [0, 4.0, 5.2, 0]
+      - [12, 10.0, 5.2, 0]
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.3, 0.0]]
+settle_time: 8.0
+duration: 40.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.15
+  require_states: [SLOW_DOWN, STOP]   # 접근 물체 게이트: TTC 반응 필수
+  forbid_states: [ESTOP]

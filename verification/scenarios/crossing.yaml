@@ -1,0 +1,21 @@
+# 횡단 + 재개: 보행자가 로봇 차선을 천천히 가로질러(0.12m/s) 수 초간 점유 후 이탈.
+# 로봇은 SLOW/STOP → 차선 비면 WAIT→RESUME으로 재출발해 통과해야 한다.
+# (제자리 pause 세그먼트는 퇴화 궤적이라 사용 금지 — 느린 횡단으로 점유 시간 확보)
+name: crossing
+actors:
+  - name: ped_crossing
+    loop: false
+    waypoints:            # y=3.5→7.0/30s; 차선 대역(y≈4.86~5.53)을 t≈11.7~17.4s 점유
+      - [0, 12.0, 3.5, 1.570796]
+      - [30, 12.0, 7.0, 1.570796]
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.3, 0.0]]
+settle_time: 8.0
+duration: 50.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.15
+  require_states: [SLOW_DOWN]
+  forbid_states: [ESTOP]
+  min_travel_m: 4.5                  # 보행자 이탈 후 교차점 통과(재개) 확인
