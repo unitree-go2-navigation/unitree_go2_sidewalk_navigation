@@ -15,7 +15,9 @@ minimum clearance over all actors.
 This node is fully decoupled from avoidance: it never touches cmd_vel.
 """
 
+import csv
 import math
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -34,6 +36,9 @@ class CollisionOracleNode(Node):
         self.declare_parameter('warning_threshold', 1.5)
         self.declare_parameter(
             'ground_truth_topic', '/world/default/actor_pose/info')
+        # Per-run metrics CSV (scenario runner's primary metric source).
+        # Empty = disabled. One row per actor per check tick.
+        self.declare_parameter('csv_path', '')
 
         self.robot_name = self.get_parameter('robot_name').value
         self.robot_radius = self.get_parameter('robot_radius').value
@@ -49,6 +54,17 @@ class CollisionOracleNode(Node):
         self.collision_count = 0
         self.min_clearance = float('inf')
         self.min_clearance_actor = None
+
+        self._csv_file = None
+        self._csv_writer = None
+        csv_path = self.get_parameter('csv_path').value
+        if csv_path:
+            os.makedirs(os.path.dirname(csv_path) or '.', exist_ok=True)
+            self._csv_file = open(csv_path, 'w', newline='')
+            self._csv_writer = csv.writer(self._csv_file)
+            self._csv_writer.writerow(
+                ['t', 'actor', 'clearance', 'center_dist',
+                 'robot_x', 'robot_y', 'actor_x', 'actor_y'])
 
         self.create_subscription(TFMessage, topic, self.pose_cb, 10)
         self.event_pub = self.create_publisher(String, '/collision_events', 10)
@@ -74,11 +90,18 @@ class CollisionOracleNode(Node):
             return
 
         rx, ry = self.robot_xy
+        now_s = self.get_clock().now().nanoseconds * 1e-9
         frame_min = float('inf')
         frame_min_actor = None
         for name, (ax, ay) in self.actors.items():
             center_dist = math.hypot(rx - ax, ry - ay)
             clearance = center_dist - self.robot_radius - self.actor_radius
+
+            if self._csv_writer is not None:
+                self._csv_writer.writerow(
+                    [f'{now_s:.3f}', name, f'{clearance:.4f}',
+                     f'{center_dist:.4f}', f'{rx:.3f}', f'{ry:.3f}',
+                     f'{ax:.3f}', f'{ay:.3f}'])
 
             if clearance < frame_min:
                 frame_min = clearance
@@ -114,6 +137,13 @@ class CollisionOracleNode(Node):
             f'  Total collisions: {self.collision_count}\n'
             f'  Min clearance: {self.min_clearance:.3f}m '
             f'(actor={self.min_clearance_actor})')
+        if self._csv_file is not None:
+            self._csv_file.write(
+                f'# summary collisions={self.collision_count} '
+                f'min_clearance={self.min_clearance:.4f} '
+                f'min_clearance_actor={self.min_clearance_actor}\n')
+            self._csv_file.close()
+            self._csv_file = None
         super().destroy_node()
 
 

@@ -69,6 +69,10 @@ def generate_launch_description():
         "safety_gate", default_value="true",
         description="Enable safety_stop gate. false = pass-through (baseline/teleop test).",
     )
+    declare_oracle_csv = DeclareLaunchArgument(
+        "oracle_csv", default_value="",
+        description="Per-run clearance CSV path for collision_oracle (scenario runner). Empty = off.",
+    )
     declare_world_init_x = DeclareLaunchArgument("world_init_x", default_value="15.0")
     declare_world_init_y = DeclareLaunchArgument("world_init_y", default_value="5.2")
     # Fixed for the calibrated small_city sidewalk spawn. Do not tune implicitly.
@@ -229,7 +233,11 @@ def generate_launch_description():
         executable='collision_oracle_node',
         name='collision_oracle_node',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'csv_path': ParameterValue(
+                LaunchConfiguration('oracle_csv'), value_type=str),
+        }],
     )
 
     # Phase 1: LiDAR perception + safety stop gate
@@ -408,6 +416,7 @@ def generate_launch_description():
             declare_gazebo_world,
             declare_gui,
             declare_safety_gate,
+            declare_oracle_csv,
             declare_world_init_x,
             declare_world_init_y,
             declare_world_init_z,
