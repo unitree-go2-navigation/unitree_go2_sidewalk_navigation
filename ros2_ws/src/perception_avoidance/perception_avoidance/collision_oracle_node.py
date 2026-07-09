@@ -26,8 +26,8 @@ from tf2_msgs.msg import TFMessage
 
 
 class CollisionOracleNode(Node):
-    def __init__(self):
-        super().__init__('collision_oracle_node')
+    def __init__(self, **kwargs):
+        super().__init__('collision_oracle_node', **kwargs)
 
         self.declare_parameter('robot_name', 'go2')
         self.declare_parameter('robot_radius', 0.25)
