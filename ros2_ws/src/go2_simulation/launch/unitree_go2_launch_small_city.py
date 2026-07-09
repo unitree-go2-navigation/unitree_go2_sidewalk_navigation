@@ -65,6 +65,10 @@ def generate_launch_description():
     declare_gui = DeclareLaunchArgument(
         "gui", default_value="true", description="Use gui"
     )
+    declare_safety_gate = DeclareLaunchArgument(
+        "safety_gate", default_value="true",
+        description="Enable safety_stop gate. false = pass-through (baseline/teleop test).",
+    )
     declare_world_init_x = DeclareLaunchArgument("world_init_x", default_value="15.0")
     declare_world_init_y = DeclareLaunchArgument("world_init_y", default_value="5.2")
     # Fixed for the calibrated small_city sidewalk spawn. Do not tune implicitly.
@@ -122,7 +126,8 @@ def generate_launch_description():
             {"hardware_connected": False},
             {"close_loop_odom": True},
         ],
-        remappings=[("/cmd_vel/smooth", "/cmd_vel")],
+        # CHAMP reads filtered cmd_vel from safety_stop output
+        remappings=[("/cmd_vel/smooth", "/cmd_vel_safe")],
     )
 
     state_estimator_node = Node(
@@ -218,6 +223,46 @@ def generate_launch_description():
         # parameters=[{"use_sim_time": use_sim_time}]
     )
 
+    # Evaluation oracle: ground-truth clearance metric (not used by avoidance)
+    collision_oracle_node = Node(
+        package='perception_avoidance',
+        executable='collision_oracle_node',
+        name='collision_oracle_node',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+    )
+
+    # Phase 1: LiDAR perception + safety stop gate
+    perception_avoidance = get_package_share_directory('perception_avoidance')
+    self_filter_yaml = os.path.join(perception_avoidance, 'config/self_filter.yaml')
+    safety_stop_yaml = os.path.join(perception_avoidance, 'config/safety_stop.yaml')
+
+    lidar_obstacle_node = Node(
+        package='perception_avoidance',
+        executable='lidar_obstacle_node',
+        name='lidar_obstacle_node',
+        output='screen',
+        parameters=[self_filter_yaml, {'use_sim_time': use_sim_time}],
+    )
+
+    # safety_stop gate: teleop /cmd_vel → filter → /cmd_vel_safe → CHAMP
+    safety_stop_node = Node(
+        package='perception_avoidance',
+        executable='safety_stop_node',
+        name='safety_stop_node',
+        output='screen',
+        parameters=[
+            safety_stop_yaml,
+            {'use_sim_time': use_sim_time,
+             'enable_gate': ParameterValue(
+                 LaunchConfiguration('safety_gate'), value_type=bool)},
+        ],
+        remappings=[
+            ('/cmd_vel_in', '/cmd_vel'),       # subscribe to teleop output
+            ('/cmd_vel_safety', '/cmd_vel_safe'),  # publish filtered to CHAMP input
+        ],
+    )
+
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     gazebo_resource_path = AppendEnvironmentVariable(
@@ -227,6 +272,13 @@ def generate_launch_description():
     small_city_sdf_path = AppendEnvironmentVariable(
         name="SDF_PATH",
         value=small_city_models_path,
+    )
+    # Allow Gazebo to find the ActorPosePublisher system plugin built in this package
+    go2_simulation_plugin_path = os.path.normpath(
+        os.path.join(go2_simulation, "..", "..", "lib"))
+    gazebo_plugin_path = AppendEnvironmentVariable(
+        name="GZ_SIM_SYSTEM_PLUGIN_PATH",
+        value=go2_simulation_plugin_path,
     )
 
     # Setup to launch the simulator and Gazebo world
@@ -268,16 +320,33 @@ def generate_launch_description():
             '/imu/data@sensor_msgs/msg/Imu@gz.msgs.IMU',
             '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
             '/joint_states@sensor_msgs/msg/JointState@gz.msgs.Model',
-            '/velodyne_points/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
             '/unitree_lidar/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked',
-            # '/velodyne_points@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
             '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/rgb_image@sensor_msgs/msg/Image@gz.msgs.Image',
+
+            # RealSense D435i RGBD camera + IMU topics
+            '/d435i/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/d435i/depth_image@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/d435i/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
+            '/d435i/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
+            '/d435i/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
 
             # ROS to Gazebo
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
             '/joint_group_controller/commands@std_msgs/msg/Float64MultiArray]gz.msgs.Double_V',
         ],
+    )
+
+    # Pose bridge for actor tracking (YAML config - handles complex topic paths)
+    pose_bridge_config = os.path.join(go2_simulation, "config/pose_bridge.yaml")
+    pose_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='pose_bridge',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'config_file': pose_bridge_config,
+        }],
     )
 
     # Use spawner nodes directly to handle the configuration step. (load → configure → activate)
@@ -336,6 +405,7 @@ def generate_launch_description():
             declare_ros_control_file,
             declare_gazebo_world,
             declare_gui,
+            declare_safety_gate,
             declare_world_init_x,
             declare_world_init_y,
             declare_world_init_z,
@@ -345,12 +415,14 @@ def generate_launch_description():
             declare_description_path,
             gazebo_resource_path,
             small_city_sdf_path,
+            gazebo_plugin_path,
 
             # Gazebo and robot nodes first
             gz_sim,
             robot_state_publisher_node,
             gazebo_spawn_robot,
             gazebo_bridge,
+            pose_bridge,
 
             # CHAMP controller nodes
             quadruped_controller_node,
@@ -371,5 +443,12 @@ def generate_launch_description():
 
             # Visualization (only if rviz flag is set)
             rviz2,
+
+            # Evaluation oracle
+            collision_oracle_node,
+
+            # Phase 1: LiDAR safety gate
+            lidar_obstacle_node,
+            safety_stop_node,
         ]
     )
