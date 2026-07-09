@@ -35,6 +35,13 @@
     <plugin name='gz::sim::systems::Sensors' filename='gz-sim-sensors-system'>
       <render_engine>ogre2</render_engine>
     </plugin>
+    <!-- Publishes actor + configured-model WorldPose for evaluation oracle (not used by avoidance) -->
+    <plugin name='go2_simulation::ActorPosePublisher' filename='ActorPosePublisher'>
+      <topic>/world/default/actor_pose/info</topic>
+      <update_rate>50</update_rate>
+      <frame_id>world</frame_id>
+      <model_name>go2</model_name>
+    </plugin>
 
     <!-- A global light source -->
     <light type="directional" name="sun">
@@ -5485,6 +5492,8 @@
       <uri>model://suv</uri>
     </include>
 
+    <!-- Pedestrian actor (GPU 센서 감지 가능, 물리 충돌 없음) -->
+    <!-- 충돌 평가: 로봇-actor 간 거리 기반으로 판정 -->
     <actor name="pedestrian_on_sidewalk16">
       <skin>
         <filename>model://actor_walking/meshes/walk.dae</filename>
