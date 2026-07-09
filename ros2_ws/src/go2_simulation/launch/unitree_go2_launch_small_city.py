@@ -331,7 +331,9 @@ def generate_launch_description():
             '/d435i/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
 
             # ROS to Gazebo
-            '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
+            # NOTE: /cmd_vel→gz.msgs.Twist 브리지는 제거됨 — position control에서
+            # 구동은 /cmd_vel_safe→CHAMP→joint 명령 경로뿐이며, 이 브리지는
+            # 안전 게이트를 우회하는 잠재 경로였음 (gz velocity plugin 재활성 시).
             '/joint_group_controller/commands@std_msgs/msg/Float64MultiArray]gz.msgs.Double_V',
         ],
     )

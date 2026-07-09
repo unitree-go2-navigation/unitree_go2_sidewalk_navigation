@@ -10,10 +10,12 @@ Pipeline:
     → ground removal (Z cutoff)
     → voxel downsample
     → 2D grid clustering
-    → publish Detection3DArray (centroid + bbox)
+    → frame-to-frame track association (greedy NN + EMA) → per-cluster velocity
+    → publish Detection3DArray (centroid + bbox, v_rel embedded in
+      results[0].pose.covariance[0/1]) + debug PoseArray
 
-Velocity / tracking is intentionally not estimated in this first cut.
-safety_stop_node uses the static-obstacle TTC fallback.
+Velocities are estimated in base_link (= relative to the robot), which is the
+v_rel input for safety_stop_node's relative-velocity TTC.
 """
 
 import math
@@ -67,7 +69,7 @@ class LidarObstacleNode(Node):
         self.declare_parameter('roi_y_min', -3.0)
         self.declare_parameter('roi_y_max', 3.0)
         self.declare_parameter('roi_z_min', -0.3)
-        self.declare_parameter('roi_z_max', 1.8)
+        self.declare_parameter('roi_z_max', 0.5)
         self.declare_parameter('self_x_min', -0.4)
         self.declare_parameter('self_x_max',  0.4)
         self.declare_parameter('self_y_min', -0.3)

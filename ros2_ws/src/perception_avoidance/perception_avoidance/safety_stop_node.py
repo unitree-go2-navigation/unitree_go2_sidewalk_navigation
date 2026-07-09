@@ -74,7 +74,7 @@ class SafetyStopNode(Node):
         # this small margin. Larger-distance reaction is TTC-driven (only when
         # actually approaching), so a static obstacle the robot merely rotates
         # past (closing≈0 → TTC=inf) does not force STOP.
-        self.declare_parameter('emergency_clearance', 0.4)
+        self.declare_parameter('emergency_clearance', 0.25)
         self.declare_parameter('stop_ttc', 1.0)
         # Min closing speed (m/s) to treat an obstacle as approaching
         self.declare_parameter('closing_eps', 0.05)
