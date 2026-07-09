@@ -56,3 +56,7 @@ venv/
 # 4. 테스트/캐시 관련
 .pytest_cache/
 .coverage
+
+# Claude Code 로컬 설정 / 브라우저 MCP 산출물
+.claude/
+.playwright-mcp/
