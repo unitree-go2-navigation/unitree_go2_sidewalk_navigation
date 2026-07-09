@@ -1,0 +1,70 @@
+# safety_stop_node parameters.
+# Acts as a cmd_vel filter: pass-through / scale / stop based on obstacle clearance and TTC.
+safety_stop_node:
+  ros__parameters:
+    # Topics
+    cmd_vel_in_topic: /cmd_vel_in
+    cmd_vel_out_topic: /cmd_vel_safety
+    obstacles_topic: /obstacles/lidar
+    odom_topic: /odom
+
+    # Rectangular footprint (Go2 ≈ 0.70 × 0.31 m → half-extents 0.35 × 0.155).
+    # Forward clearance subtracts half-length; lateral corridor uses half-width.
+    robot_half_length: 0.35   # Go2 body half-length (forward/rear extent incl. leg reach)
+    robot_half_width: 0.155   # Go2 footprint half-width (URDF-derived). Robot constant.
+    corridor_margin: 0.18     # lateral uncertainty: gait sway + localization + sensor. NOT geometry.
+
+    # SLOW zone (start scaling cmd_vel)
+    slow_clearance: 3.0
+    slow_ttc: 3.0
+
+    # Unconditional STOP backstop (distance-only). Larger-distance reaction is
+    # TTC-driven, so a static obstacle the robot only rotates past won't STOP.
+    # 0.25 = turning-radius safety (~0.1) + forward-extent underestimate (~0.08)
+    #        + gait/cluster/localization noise margin (~0.07). Floor ~0.2.
+    emergency_clearance: 0.25
+    stop_ttc: 1.0
+
+    # Min closing speed (m/s) to treat an obstacle as approaching
+    closing_eps: 0.05
+
+    # Let rotation (angular.z) pass through while SLOW/STOP (turn away instead
+    # of deadlocking facing an obstacle). Forward/lateral/reverse stay gated.
+    pass_rotation_when_blocked: true
+
+    # Hysteresis margins (re-entry into safer state requires extra room)
+    hysteresis_clearance: 0.30
+    hysteresis_ttc: 0.5
+
+    # Persistence (sec) before transitioning to a more restrictive state
+    persistence_slow: 0.10
+    persistence_stop: 0.05
+
+    # WAIT → RESUME: front clear (no STOP threat, nothing approaching) for this
+    # long, then RESUME ramps speed 0→full over resume_time (gait-safe restart).
+    wait_clear_duration: 1.0
+    resume_time: 1.5
+
+    # Sensor timeout (sec) — beyond this, force STOP
+    sensor_timeout: 0.5
+
+    # Control rate (Hz)
+    control_rate: 50.0
+
+    # Gate enable. false = pass-through (baseline/teleop test, NO safety).
+    enable_gate: true
+
+    # Stuck detection & recovery (Phase 2.5). "Commanded to move but not moving"
+    # (curb/leg-catch) → in-place rotation toward clearer side. Rotation-only
+    # (no blind reverse — no rear perception). N failed attempts → latched ESTOP.
+    stuck_enable: true
+    stuck_v_min: 0.05          # output linear above this = "trying to move"
+    # Progress = net displacement over stuck_duration window. Instantaneous odom
+    # speed is unusable (legged gait sway oscillates |v| ±0.2 m/s in place):
+    # measured stuck ~0.05 m/2s vs normal walk ~0.45 m/2s → 0.1 m separates them.
+    stuck_disp_min: 0.1        # min net move (m) over the window to count as progressing
+    stuck_duration: 2.0        # window length: no-progress must persist this long
+    recover_settle_time: 0.3   # zero-cmd settle before rotating
+    recover_rotate_time: 1.2   # in-place rotation duration
+    recover_yaw_rate: 0.5      # rad/s
+    max_recover_attempts: 3    # exceed (without moving) → ESTOP
