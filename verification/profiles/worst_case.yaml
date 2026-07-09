@@ -1,0 +1,7 @@
+# 최악 조건 프로파일: 어두운/젖은 노면, 원거리 희소, 통신 지연 상한.
+degrade_pointcloud_node:
+  ros__parameters:
+    density_keep_ratio: 0.10
+    dropout_ratio: 0.20
+    range_noise_std: 0.05
+    latency_s: 0.20

@@ -27,6 +27,7 @@ setup(
             'collision_oracle_node = perception_avoidance.collision_oracle_node:main',
             'lidar_obstacle_node = perception_avoidance.lidar_obstacle_node:main',
             'safety_stop_node = perception_avoidance.safety_stop_node:main',
+            'degrade_pointcloud_node = perception_avoidance.degrade_pointcloud_node:main',
         ],
     },
 )

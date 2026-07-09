@@ -15,7 +15,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 
 
 def generate_launch_description():
@@ -72,6 +72,12 @@ def generate_launch_description():
     declare_oracle_csv = DeclareLaunchArgument(
         "oracle_csv", default_value="",
         description="Per-run clearance CSV path for collision_oracle (scenario runner). Empty = off.",
+    )
+    declare_degrade_profile = DeclareLaunchArgument(
+        "degrade_profile", default_value="",
+        description="Sensor degradation profile YAML (sim2real robustness). "
+                    "Empty = clean cloud. When set, lidar_obstacle_node consumes "
+                    "the degraded topic.",
     )
     declare_world_init_x = DeclareLaunchArgument("world_init_x", default_value="15.0")
     declare_world_init_y = DeclareLaunchArgument("world_init_y", default_value="5.2")
@@ -245,12 +251,32 @@ def generate_launch_description():
     self_filter_yaml = os.path.join(perception_avoidance, 'config/self_filter.yaml')
     safety_stop_yaml = os.path.join(perception_avoidance, 'config/safety_stop.yaml')
 
+    # Sensor degradation harness (sim2real robustness). Off unless a profile
+    # YAML is given; then the perception input is rerouted through it.
+    degrade_profile = LaunchConfiguration('degrade_profile')
+    degrade_enabled = PythonExpression(["'", degrade_profile, "' != ''"])
+    degrade_pointcloud_node = Node(
+        package='perception_avoidance',
+        executable='degrade_pointcloud_node',
+        name='degrade_pointcloud_node',
+        output='screen',
+        parameters=[degrade_profile, {'use_sim_time': use_sim_time}],
+        condition=IfCondition(degrade_enabled),
+    )
+    lidar_points_topic = PythonExpression(
+        ["'/unitree_lidar/points_degraded' if '", degrade_profile,
+         "' != '' else '/unitree_lidar/points'"])
+
     lidar_obstacle_node = Node(
         package='perception_avoidance',
         executable='lidar_obstacle_node',
         name='lidar_obstacle_node',
         output='screen',
-        parameters=[self_filter_yaml, {'use_sim_time': use_sim_time}],
+        parameters=[
+            self_filter_yaml,
+            {'use_sim_time': use_sim_time,
+             'points_topic': ParameterValue(lidar_points_topic, value_type=str)},
+        ],
     )
 
     # safety_stop gate: teleop /cmd_vel → filter → /cmd_vel_safe → CHAMP
@@ -417,6 +443,7 @@ def generate_launch_description():
             declare_gui,
             declare_safety_gate,
             declare_oracle_csv,
+            declare_degrade_profile,
             declare_world_init_x,
             declare_world_init_y,
             declare_world_init_z,
@@ -458,7 +485,8 @@ def generate_launch_description():
             # Evaluation oracle
             collision_oracle_node,
 
-            # Phase 1: LiDAR safety gate
+            # Phase 1: LiDAR safety gate (+ optional sim2real degradation)
+            degrade_pointcloud_node,
             lidar_obstacle_node,
             safety_stop_node,
         ]

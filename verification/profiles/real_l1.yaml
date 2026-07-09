@@ -1,0 +1,9 @@
+# 실제 Unitree L1 근사 프로파일 (sim2real 회귀 게이트용).
+# 근거: L1 비반복 스캔 21,600 pts/s(시뮬 균일 링 대비 ~1/5 밀도),
+# cm급 range jitter, 저반사면 dropout, 파이프라인 지연 ~100ms.
+degrade_pointcloud_node:
+  ros__parameters:
+    density_keep_ratio: 0.20
+    dropout_ratio: 0.10
+    range_noise_std: 0.03
+    latency_s: 0.10
