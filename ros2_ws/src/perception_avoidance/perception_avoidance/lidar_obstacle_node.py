@@ -12,7 +12,13 @@ Pipeline:
     → 2D grid clustering
     → frame-to-frame track association (greedy NN + EMA) → per-cluster velocity
     → publish Detection3DArray (centroid + bbox, v_rel embedded in
-      results[0].pose.covariance[0/1]) + debug PoseArray
+      results[0].pose.covariance[0/1], 코리도 내 최근접점 x가 covariance[2],
+      코리도 내 점 없으면 -1) + debug PoseArray
+
+covariance[2] (corridor_front_x)를 점 단위로 계산하는 이유: 긴 평행 구조물
+(인도변 울타리 등)은 요 오차가 있으면 axis-aligned bbox가 차선 쪽으로 번져
+게이트의 bbox 겹침 판정을 오염시킴 (2026-07-10 회귀에서 empty 0/5 원인).
+실제 점이 코리도 안에 있을 때만 유효한 front distance를 준다.
 
 Velocities are estimated in base_link (= relative to the robot), which is the
 v_rel input for safety_stop_node's relative-velocity TTC.
@@ -80,6 +86,9 @@ class LidarObstacleNode(Node):
         self.declare_parameter('voxel_size', 0.10)
         self.declare_parameter('cluster_grid', 0.20)
         self.declare_parameter('cluster_min_points', 4)
+        # 전방 코리도 반폭 (m) = safety_stop의 robot_half_width + corridor_margin.
+        # 두 yaml 간 정합은 test_config_consistency로 고정.
+        self.declare_parameter('corridor_half', 0.335)
         self.declare_parameter('points_topic', '/unitree_lidar/points')
         self.declare_parameter('target_frame', 'base_link')
         self.declare_parameter('output_topic', '/obstacles/lidar')
@@ -249,6 +258,7 @@ class LidarObstacleNode(Node):
 
         # Per-cluster bbox + center. The center is the tracking/velocity anchor
         # and matches the p_rel anchor safety_stop uses.
+        corridor_half = self.get_parameter('corridor_half').value
         centers = []
         bboxes = []
         for member_idx in clusters:
@@ -257,8 +267,11 @@ class LidarObstacleNode(Node):
             mx = cluster_pts.max(axis=0)
             ctr = (mn + mx) * 0.5
             size = np.maximum(mx - mn, 0.05)
+            # 코리도 내 최근접점 x (점 없으면 -1): 게이트의 front clearance 근거
+            in_band = np.abs(cluster_pts[:, 1]) <= corridor_half
+            front_x = float(cluster_pts[in_band, 0].min()) if in_band.any() else -1.0
             centers.append((float(ctr[0]), float(ctr[1]), float(ctr[2])))
-            bboxes.append((ctr, size))
+            bboxes.append((ctr, size, front_x))
 
         stamp_s = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         tracks = self._associate(centers, stamp_s)
@@ -270,7 +283,7 @@ class LidarObstacleNode(Node):
         vel_out = PoseArray()
         vel_out.header = out.header
 
-        for (ctr, size), (tid, vx, vy) in zip(bboxes, tracks):
+        for (ctr, size, front_x), (tid, vx, vy) in zip(bboxes, tracks):
             det = Detection3D()
             det.header = out.header
             det.bbox = BoundingBox3D()
@@ -289,8 +302,10 @@ class LidarObstacleNode(Node):
             # the detection: covariance[0]=vx, covariance[1]=vy. Avoids the
             # cross-topic ordering race a separate velocity topic suffers from
             # under a single-threaded executor.
+            # covariance[2] = 코리도 내 최근접점 x (없으면 -1) — 모듈 docstring 참조.
             hyp.pose.covariance[0] = float(vx)
             hyp.pose.covariance[1] = float(vy)
+            hyp.pose.covariance[2] = float(front_x)
             det.results.append(hyp)
             det.id = str(tid)
             out.detections.append(det)

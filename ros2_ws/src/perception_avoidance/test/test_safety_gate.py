@@ -12,16 +12,26 @@ from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithP
 from perception_avoidance.safety_stop_node import SafetyStopNode, State
 
 
-def make_det(cx, cy, sx=0.4, sy=0.4, vx=0.0, vy=0.0):
+CORRIDOR_HALF = 0.335  # robot_half_width(0.155) + corridor_margin(0.18)
+
+
+def make_det(cx, cy, sx=0.4, sy=0.4, vx=0.0, vy=0.0, cfx=None):
+    """cfx(코리도 내 최근접점 x, covariance[2])는 기본적으로 발행 노드처럼
+    bbox에서 유도: 밴드 겹침 시 bbox 앞면, 아니면 -1. 명시 지정으로 점-bbox
+    불일치(평행 구조물 bbox 번짐) 케이스를 표현한다."""
     det = Detection3D()
     det.bbox.center.position.x = float(cx)
     det.bbox.center.position.y = float(cy)
     det.bbox.size.x = float(sx)
     det.bbox.size.y = float(sy)
     det.bbox.size.z = 1.0
+    if cfx is None:
+        in_band = (cy - 0.5 * sy) <= CORRIDOR_HALF and (cy + 0.5 * sy) >= -CORRIDOR_HALF
+        cfx = (cx - 0.5 * sx) if in_band else -1.0
     hyp = ObjectHypothesisWithPose()
     hyp.pose.covariance[0] = float(vx)
     hyp.pose.covariance[1] = float(vy)
+    hyp.pose.covariance[2] = float(cfx)
     det.results.append(hyp)
     return det
 
@@ -87,6 +97,21 @@ def test_obstacle_straddling_corridor_counted(node):
     # bbox ymin = 0.5-0.2=0.3 < 0.335 → in corridor
     feed(node, [make_det(2.0, 0.5)])
     assert node.min_clearance == pytest.approx(1.45, abs=1e-6)
+
+
+def test_parallel_wall_bbox_smear_ignored(node):
+    # 회귀 케이스 (2026-07-10 empty 0/5): 긴 평행 구조물의 axis-aligned bbox가
+    # 요 오차로 코리도를 스치지만(ymax=-0.15 > -0.335) 실제 점은 전부 밴드 밖
+    # (cfx=-1) → 차단으로 치지 않아야 한다. 구 bbox 판정은 clr=0.2로 영구 STOP.
+    feed(node, [make_det(2.3, -1.1, sx=3.5, sy=1.9, cfx=-1.0)])
+    assert math.isinf(node.min_clearance)
+    assert math.isinf(node.min_ttc)
+
+
+def test_in_corridor_point_overrides_bbox_center_offset(node):
+    # 중심은 코리도 밖(cy=-1.1)이어도 점이 밴드 안에 있으면(cfx=1.2) 차단으로 판정
+    feed(node, [make_det(2.3, -1.1, sx=3.5, sy=1.9, cfx=1.2)])
+    assert node.min_clearance == pytest.approx(1.2 - 0.35, abs=1e-6)
 
 
 def test_obstacle_behind_ignored(node):

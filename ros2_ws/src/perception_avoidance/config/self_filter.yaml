@@ -29,6 +29,11 @@ lidar_obstacle_node:
     cluster_grid: 0.20
     cluster_min_points: 4
 
+    # 전방 코리도 반폭 (m). safety_stop.yaml의 robot_half_width + corridor_margin
+    # 과 반드시 일치해야 함 (test_config_consistency가 고정). 클러스터 점 중
+    # 이 밴드 안 최근접점 x를 covariance[2]로 발행 → 게이트 clearance 근거.
+    corridor_half: 0.335
+
     # Topics
     points_topic: /unitree_lidar/points
     target_frame: base_link

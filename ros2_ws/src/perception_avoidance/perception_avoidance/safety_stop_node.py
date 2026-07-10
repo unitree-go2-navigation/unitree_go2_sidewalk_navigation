@@ -207,9 +207,7 @@ class SafetyStopNode(Node):
             cx = det.bbox.center.position.x
             cy = det.bbox.center.position.y
             hx = 0.5 * det.bbox.size.x
-            hy = 0.5 * det.bbox.size.y
             xmin, xmax = cx - hx, cx + hx
-            ymin, ymax = cy - hy, cy + hy
 
             # Must have some extent ahead of the robot
             if xmax <= 0.0:
@@ -220,15 +218,19 @@ class SafetyStopNode(Node):
                 left_min = min(left_min, front_face)
             else:
                 right_min = min(right_min, front_face)
-            # Forward corridor: ignore obstacles whose bbox is laterally
-            # outside the robot's travel lane (e.g. parallel side walls).
-            if ymin > self.corridor_half or ymax < -self.corridor_half:
-                continue
+            # Forward corridor: 판정 근거는 bbox 겹침이 아니라 클러스터 점 중
+            # 코리도 안에 실제로 있는 최근접점 x (covariance[2], 없으면 -1).
+            # 긴 평행 구조물(인도변 울타리)은 요 오차 시 axis-aligned bbox가
+            # 차선 쪽으로 번져 bbox 판정을 오염시킴 (empty 0/5 원인, 2026-07-10).
+            corridor_front_x = -1.0
+            if det.results:
+                corridor_front_x = det.results[0].pose.covariance[2]
+            if corridor_front_x < 0.0:
+                continue    # 코리도 내 점 없음 → 차선 비차단
 
-            # Longitudinal clearance: distance from the bbox front face to the
-            # robot's front body edge (rectangular footprint half-length).
-            front_x = max(xmin, 0.0)
-            clr = front_x - self.robot_half_length
+            # Longitudinal clearance: distance from the nearest in-corridor
+            # point to the robot's front body edge (footprint half-length).
+            clr = corridor_front_x - self.robot_half_length
             if clr < min_clr:
                 min_clr = clr
 
