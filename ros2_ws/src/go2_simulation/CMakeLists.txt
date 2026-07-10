@@ -35,6 +35,21 @@ install(TARGETS ActorPosePublisher
   RUNTIME DESTINATION bin
 )
 
+# Gazebo Harmonic plugin: waypoint_mover (이동 보행자 — actor 대체, 회귀 러너용)
+add_library(WaypointMover SHARED
+  plugins/waypoint_mover/src/WaypointMover.cc
+)
+target_link_libraries(WaypointMover
+  gz-sim8::gz-sim8
+  gz-plugin2::register
+  gz-math7::gz-math7
+)
+install(TARGETS WaypointMover
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 # Install directories
 install(DIRECTORY
   launch

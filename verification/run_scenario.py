@@ -43,6 +43,11 @@ def kill_gazebo_leftovers():
     subprocess.run(['pkill', '-f', 'gz sim'], check=False)
     subprocess.run(['pkill', '-f', 'parameter_bridge'], check=False)
     time.sleep(2.0)
+    # 웨지된 gz 서버는 SIGTERM을 무시하고 살아남아 다음 trial의
+    # /controller_manager 서비스를 오염시킴 — SIGKILL로 격상
+    subprocess.run(['pkill', '-9', '-f', 'gz sim'], check=False)
+    subprocess.run(['pkill', '-9', '-f', 'parameter_bridge'], check=False)
+    time.sleep(1.0)
 
 
 def run_trial(scenario, trial_idx, degrade_profile, log):
@@ -149,6 +154,9 @@ def main():
             ['scenario', 'degrade', 'trial', 'pass', 'min_clearance',
              'collisions', 'stop_entries', 'travel_m', 'states', 'failures',
              'run_dir'])
+
+    # 외부 잔존 gz/bridge가 첫 trial을 오염시키지 않도록 시작 전에도 정리
+    kill_gazebo_leftovers()
 
     total = failed = 0
     for sf in scenario_files:

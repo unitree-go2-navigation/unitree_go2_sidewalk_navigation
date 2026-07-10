@@ -7,17 +7,27 @@ actor 명세:
   {name, waypoints: [[t, x, y, yaw], ...], loop: bool}          # 이동 보행자
   {name, static: true, x, y}                                    # 정지 보행자
 
-⚠ 퇴화 궤적 금지: 세그먼트 이동거리 < 0.05m 또는 속도 < 0.02 m/s인 waypoint
-쌍은 거부한다. 근거(2026-07-09 디버깅): 퇴화 궤적 actor는 센서 렌더링이 활성인
-시뮬에서 gz sim 스레드를 wedge시킨다 (스켈레탈 애니메이션 시간 계산 발산 추정,
-전 토픽/서비스 무응답 + "SceneBroadcaster: Timed out waiting for state" 증상).
-정지 보행자는 actor가 아니라 static 실린더 모델(static: true)로 표현할 것 —
-plugin <model_name> 주입으로 oracle이 동일하게 추적한다.
+⚠ gz <actor>는 headless(-s) 센서 렌더링과 같이 쓸 때 함정이 4개 있다
+(2026-07-09~10 디버깅 — ACTOR_TEMPLATE 위 주석 참조). 특히 <loop>false</loop>는
+sim 루프를 wedge시키므로(전 토픽/서비스 무응답) 템플릿은 항상 loop=true를
+내보내고, "이동 후 정지"는 준정지 hold 세그먼트로 표현한다.
+퇴화 궤적 가드(사용자 세그먼트 이동거리 < 0.05m 또는 속도 < 0.02 m/s 거부)는
+방어적으로 유지 — 정지는 static: true가 올바른 표현이다.
+정지 보행자 모델은 plugin <model_name> 주입으로, 이동 보행자(actor)는
+oracle이 자동으로 추적한다.
 """
 
 import math
 import re
 
+# 이동 보행자: 사람 스킨(walk.dae) actor. headless(-s) 센서 렌더링과 함께
+# 쓰려면 아래 4가지가 전부 필요하다 (2026-07-10 A/B 실험으로 각각 확정):
+#   1) <loop>true</loop> — loop=false는 센서 씬 초기화 시 sim 루프 wedge
+#   2) <interpolate_x> 없음 — 있으면 waypoint 시간 무시(거리 기반 재타이밍)
+#   3) tension="1.0" — 낮으면 불균등 세그먼트에서 스플라인 오버슈트(수 m 진동)
+#   4) trajectory type ≠ animation 이름 — 매칭되면 애니메이션 길이가 타이밍 오염
+# "이동 후 정지"(spec loop=false)는 loop=true + 초장주기 준정지 hold 세그먼트로
+# 표현한다 (generate 시 자동 추가 — HOLD_* 상수 참조).
 ACTOR_TEMPLATE = """    <actor name="{name}">
       <skin>
         <filename>model://actor_walking/meshes/walk.dae</filename>
@@ -25,13 +35,12 @@ ACTOR_TEMPLATE = """    <actor name="{name}">
       </skin>
       <animation name="walk">
         <filename>model://actor_walking/meshes/walk.dae</filename>
-        <interpolate_x>true</interpolate_x>
       </animation>
       <script>
-        <loop>{loop}</loop>
+        <loop>true</loop>
         <delay_start>0.0</delay_start>
         <auto_start>true</auto_start>
-        <trajectory id="0" type="walk" tension="0.6">
+        <trajectory id="0" type="route" tension="1.0">
 {waypoints}
         </trajectory>
       </script>
@@ -42,6 +51,11 @@ WAYPOINT_TEMPLATE = """          <waypoint>
             <time>{t}</time>
             <pose>{x} {y} 1.15 0 0 {yaw}</pose>
           </waypoint>"""
+
+# 준정지 hold: 관측 창보다 훨씬 긴 주기로 미세 이동 → 사실상 그 자리에 정지.
+# (제자리 0거리 세그먼트 대신 미세 이동을 쓰는 것은 방어적 선택)
+HOLD_DIST = 0.06      # m
+HOLD_DURATION = 9999  # s
 
 # 정지 보행자: 사람 크기 실린더 (r=0.3, h=1.7). 실린더 중심 z = 인도면(0.16)+0.85.
 STATIC_PED_TEMPLATE = """    <model name="{name}">
@@ -77,20 +91,26 @@ def validate_waypoints(name, waypoints):
         if dist < MIN_SEGMENT_DIST or dist / dt < MIN_SEGMENT_SPEED:
             raise ValueError(
                 f'{name}: degenerate segment t={t0}→{t1} dist={dist:.3f}m '
-                f'speed={dist / dt:.4f}m/s — gz actor 애니메이션이 sim을 '
-                f'wedge시킴. 정지는 static: true, 종료 유지는 loop=false '
-                f'마지막 waypoint로 표현할 것')
+                f'speed={dist / dt:.4f}m/s — 정지는 static: true, '
+                f'종료 유지는 loop=false 마지막 waypoint로 표현할 것')
 
 
-def actor_xml(spec):
+def moving_ped_xml(spec):
     validate_waypoints(spec['name'], spec['waypoints'])
-    waypoints = '\n'.join(
+    waypoints = list(spec['waypoints'])
+    if not spec.get('loop', False):
+        # spec loop=false("이동 후 정지") → 준정지 hold를 붙여 loop=true로 표현.
+        # (사용자 waypoint 검증 후 내부적으로 추가하므로 퇴화 가드 대상 아님)
+        (t0, x0, y0, _), (t1, x1, y1, yaw1) = waypoints[-2], waypoints[-1]
+        seg = math.hypot(float(x1) - float(x0), float(y1) - float(y0))
+        ux, uy = (float(x1) - float(x0)) / seg, (float(y1) - float(y0)) / seg
+        waypoints.append([float(t1) + HOLD_DURATION,
+                          float(x1) + ux * HOLD_DIST,
+                          float(y1) + uy * HOLD_DIST, yaw1])
+    waypoint_xml = '\n'.join(
         WAYPOINT_TEMPLATE.format(t=w[0], x=w[1], y=w[2], yaw=w[3])
-        for w in spec['waypoints'])
-    return ACTOR_TEMPLATE.format(
-        name=spec['name'],
-        loop='true' if spec.get('loop', False) else 'false',
-        waypoints=waypoints)
+        for w in waypoints)
+    return ACTOR_TEMPLATE.format(name=spec['name'], waypoints=waypoint_xml)
 
 
 def static_ped_xml(spec):
@@ -112,12 +132,12 @@ def generate_world(base_sdf_path, actors, out_path):
             insert += static_ped_xml(spec)
             static_names.append(spec['name'])
         else:
-            insert += actor_xml(spec)
+            insert += moving_ped_xml(spec)   # actor는 oracle이 자동 추적
 
     idx = sdf.rindex('</world>')
     sdf = sdf[:idx] + insert + sdf[idx:]
 
-    # 정적 보행자 모델을 oracle이 추적하도록 plugin에 <model_name> 주입
+    # 정지 보행자 모델을 oracle이 추적하도록 plugin에 <model_name> 주입
     if static_names:
         m = re.search(
             r'(<plugin[^>]*ActorPosePublisher.*?)(\n[ \t]*</plugin>)',
