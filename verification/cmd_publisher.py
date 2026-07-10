@@ -6,6 +6,9 @@
   1. /odom + /obstacles/lidar 첫 수신까지 대기 (스택 준비)
   2. settle 시간 대기 (스폰 낙하/자세 안정화)
   3. cmd 프로파일([[t_start, vx, wz], ...])을 20Hz로 /cmd_vel에 발행
+     (프로파일 wz==0이면 오돔 요 기준 heading hold P-보정을 wz로 출력 —
+      CHAMP 보행 드리프트로 코스를 이탈해 인도변 구조물로 접근하는 것 방지.
+      실운용에는 상위 조향이 있으므로 무보정 직진이 오히려 비현실적 가혹 조건)
   4. /safety/state 전이, /collision_events, /odom 이동거리를 states CSV에 기록
   5. duration(sim) 경과 후 zero cmd 발행하고 종료
 
@@ -27,6 +30,10 @@ from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
 
+HEADING_KP = 0.8        # heading hold P 이득 (1/s)
+HEADING_WZ_MAX = 0.3    # 보정 각속도 상한 (rad/s, 게이트 pass_rotation 대상)
+
+
 class ScenarioDriver(Node):
     def __init__(self, args):
         super().__init__(
@@ -40,6 +47,8 @@ class ScenarioDriver(Node):
         self.odom_ready = False
         self.obs_ready = False
         self.robot_xy = None
+        self.robot_yaw = None
+        self.yaw_ref = None
         self.travel = 0.0
         self.state = None
         self.state_log = []                  # (t, state)
@@ -64,6 +73,9 @@ class ScenarioDriver(Node):
             self.travel += math.hypot(
                 xy[0] - self.robot_xy[0], xy[1] - self.robot_xy[1])
         self.robot_xy = xy
+        q = msg.pose.pose.orientation
+        self.robot_yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
     def _obs_cb(self, msg):
         self.obs_ready = True
@@ -107,6 +119,7 @@ class ScenarioDriver(Node):
         self.collision_events = 0
 
         t0 = self.now_s()
+        self.yaw_ref = self.robot_yaw   # 주행 시작 시점 헤딩을 유지 목표로
         self.get_logger().info(f'driving: profile={self.profile} t0={t0:.1f}')
         period = 0.05
         next_pub = t0
@@ -119,6 +132,12 @@ class ScenarioDriver(Node):
                 for t_start, pvx, pwz in self.profile:
                     if t >= t_start:
                         vx, wz = pvx, pwz
+                if wz == 0.0 and self.yaw_ref is not None \
+                        and self.robot_yaw is not None:
+                    err = math.remainder(
+                        self.yaw_ref - self.robot_yaw, 2.0 * math.pi)
+                    wz = max(-HEADING_WZ_MAX,
+                             min(HEADING_WZ_MAX, HEADING_KP * err))
                 cmd = Twist()
                 cmd.linear.x = float(vx)
                 cmd.angular.z = float(wz)

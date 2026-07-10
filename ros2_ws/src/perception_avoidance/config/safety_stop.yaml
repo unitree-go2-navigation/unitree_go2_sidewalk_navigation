@@ -20,9 +20,21 @@ safety_stop_node:
 
     # Unconditional STOP backstop (distance-only). Larger-distance reaction is
     # TTC-driven, so a static obstacle the robot only rotates past won't STOP.
-    # 0.25 = turning-radius safety (~0.1) + forward-extent underestimate (~0.08)
-    #        + gait/cluster/localization noise margin (~0.07). Floor ~0.2.
-    emergency_clearance: 0.25
+    # 0.60 (2026-07-10, 0.25→0.45→0.60 2차 상향): 정지 결정 경계는 반드시
+    # 센서 사각지대 밖에 있어야 한다 — L1 min range 0.8m(URDF)에서
+    # emergency+half_length(0.35)가 0.8과 같거나 작으면 최근접점이 STOP 판정
+    # 직전에 사각으로 소실 → '전방 클리어' 오판 → 보행자 관통 (head_on 2/5
+    # 충돌 회귀 케이스). 0.60+0.35=0.95m ≥ min_range+0.15 여유.
+    # (1차 0.45 근거: 사람 메시 근접 시 oracle 이격 0.15 확보)
+    emergency_clearance: 0.60
+    # SLOW 스케일 영점 = emergency_clearance - creep_overshoot.
+    # 영점이 STOP 문턱 아래에 있어야 creep이 문턱을 관통해 STOP이 래치된다
+    # (영점==문턱이면 점근 접근 → head_on 'STOP never entered' 3/5 원인).
+    creep_overshoot: 0.10
+    # SLOW 전진 명령 하한 (m/s) — CHAMP가 걷지 못하는 초저속 명령은 전진 없이
+    # STUCK 오인만 유발 (head_on 'STOP 대신 STUCK' 회귀 케이스). 하한 이하가
+    # 필요한 상황의 최종 정지는 emergency_clearance 백스톱이 담당.
+    creep_v_min: 0.12
     stop_ttc: 1.0
 
     # Min closing speed (m/s) to treat an obstacle as approaching

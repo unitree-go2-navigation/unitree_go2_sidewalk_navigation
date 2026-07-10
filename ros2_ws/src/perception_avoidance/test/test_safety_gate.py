@@ -179,12 +179,31 @@ def test_hysteresis_inflates_thresholds_in_stop(node):
 # --- SLOW scaling ---
 
 def test_scale_for_slow_boundaries(node):
-    node.min_clearance = node.emergency_clr
+    floor = node.emergency_clr - node.creep_overshoot
+    node.min_clearance = floor
     assert node._scale_for_slow() == 0.0
     node.min_clearance = node.slow_clr
     assert node._scale_for_slow() == 1.0
-    node.min_clearance = 0.5 * (node.emergency_clr + node.slow_clr)
+    node.min_clearance = 0.5 * (floor + node.slow_clr)
     assert node._scale_for_slow() == pytest.approx(0.5, abs=1e-6)
+
+
+def test_slow_cmd_enforces_creep_floor(node):
+    # scale이 만드는 초저속(<creep_v_min)은 걷지 못해 STUCK 오인 → 하한 적용
+    node.cmd_in.linear.x = 0.3
+    node.min_clearance = (node.emergency_clr - node.creep_overshoot) + 0.02
+    assert node._scaled_cmd(node._scale_for_slow()).linear.x < node.creep_v_min
+    assert node._slow_cmd().linear.x == pytest.approx(node.creep_v_min)
+    # 명령 자체가 하한 이하면 그대로 (하한이 명령을 키우지 않음)
+    node.cmd_in.linear.x = 0.05
+    assert node._slow_cmd().linear.x <= 0.05
+
+
+def test_creep_crosses_stop_threshold(node):
+    # STOP 문턱(emergency_clr)에서 스케일이 0보다 커야 creep이 문턱을 관통해
+    # STOP이 래치된다 (점근 접근으로 STOP 미진입하던 회귀 케이스 고정)
+    node.min_clearance = node.emergency_clr
+    assert node._scale_for_slow() > 0.0
 
 
 # --- stuck window displacement ---

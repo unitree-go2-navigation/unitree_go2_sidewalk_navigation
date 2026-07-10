@@ -74,7 +74,17 @@ class SafetyStopNode(Node):
         # this small margin. Larger-distance reaction is TTC-driven (only when
         # actually approaching), so a static obstacle the robot merely rotates
         # past (closing≈0 → TTC=inf) does not force STOP.
-        self.declare_parameter('emergency_clearance', 0.25)
+        # emergency + robot_half_length는 lidar min range(0.8m)보다 여유 있게
+        # 커야 한다 — 결정 경계가 센서 사각지대에 겹치면 최근접점 소실로
+        # STOP을 놓치고 관통한다 (safety_stop.yaml 주석 참조)
+        self.declare_parameter('emergency_clearance', 0.60)
+        # SLOW 스케일 영점을 emergency보다 이만큼 아래로 → creep이 STOP 문턱을
+        # 관통해 래치됨 (영점==문턱이면 점근 접근으로 STOP이 영원히 안 걸림)
+        self.declare_parameter('creep_overshoot', 0.10)
+        # SLOW 전진 명령 하한 (m/s). CHAMP가 걷지 못하는 초저속(≲0.12)을
+        # 명령하면 전진 없이 STUCK 오인만 유발 — 하한 밑으로 줄여야 할 상황의
+        # 최종 정지는 emergency_clearance 거리 백스톱(STOP)이 담당한다.
+        self.declare_parameter('creep_v_min', 0.12)
         self.declare_parameter('stop_ttc', 1.0)
         # Min closing speed (m/s) to treat an obstacle as approaching
         self.declare_parameter('closing_eps', 0.05)
@@ -120,6 +130,8 @@ class SafetyStopNode(Node):
         self.slow_clr = gp('slow_clearance').value
         self.slow_ttc = gp('slow_ttc').value
         self.emergency_clr = gp('emergency_clearance').value
+        self.creep_overshoot = gp('creep_overshoot').value
+        self.creep_v_min = gp('creep_v_min').value
         self.stop_ttc = gp('stop_ttc').value
         self.hyst_clr = gp('hysteresis_clearance').value
         self.hyst_ttc = gp('hysteresis_ttc').value
@@ -287,14 +299,16 @@ class SafetyStopNode(Node):
         return in_stop, in_slow
 
     def _scale_for_slow(self):
-        # Ease forward speed from full (at slow_clearance) to zero (at the
-        # emergency margin). Rotation is not scaled (see tick).
+        # Ease forward speed from full (at slow_clearance) to zero at
+        # emergency_clr - creep_overshoot: 영점이 STOP 문턱 아래에 있어야
+        # creep이 문턱을 실제로 넘어 STOP이 래치된다. Rotation is not scaled.
         clr = self.min_clearance
-        if clr <= self.emergency_clr:
+        floor = self.emergency_clr - self.creep_overshoot
+        if clr <= floor:
             return 0.0
         if clr >= self.slow_clr:
             return 1.0
-        return (clr - self.emergency_clr) / max(1e-6, (self.slow_clr - self.emergency_clr))
+        return (clr - floor) / max(1e-6, (self.slow_clr - floor))
 
     def _scaled_cmd(self, s):
         # Scale translation by s; rotation passes through (turn away freely).
@@ -303,6 +317,14 @@ class SafetyStopNode(Node):
         out.linear.y = s * self.cmd_in.linear.y
         out.angular.z = (self.cmd_in.angular.z if self.pass_rotation
                          else s * self.cmd_in.angular.z)
+        return out
+
+    def _slow_cmd(self):
+        # SLOW 출력: 비례 감속 + creep_v_min 하한 (전진 명령이 하한 이상일 때만)
+        out = self._scaled_cmd(self._scale_for_slow())
+        if (self.cmd_in.linear.x > self.creep_v_min
+                and 0.0 < out.linear.x < self.creep_v_min):
+            out.linear.x = self.creep_v_min
         return out
 
     def _next_state(self, in_stop, in_slow, clear):
@@ -453,7 +475,7 @@ class SafetyStopNode(Node):
         if self.state == State.NOMINAL:
             self._publish_cmd(self.cmd_in)
         elif self.state == State.SLOW_DOWN:
-            self._publish_cmd(self._scaled_cmd(self._scale_for_slow()))
+            self._publish_cmd(self._slow_cmd())
         elif self.state == State.RESUME:
             self._resume_scale = min(
                 1.0, self._resume_scale + dt / self.resume_time)
