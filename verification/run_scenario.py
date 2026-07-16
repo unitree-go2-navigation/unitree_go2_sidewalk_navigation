@@ -60,7 +60,9 @@ def run_trial(scenario, trial_idx, degrade_profile, log, gui=False):
     oracle_csv = os.path.join(run_dir, 'oracle.csv')
     states_csv = os.path.join(run_dir, 'states.csv')
 
-    worlds.generate_world(BASE_WORLD, scenario.get('actors', []), world_path)
+    worlds.generate_world(
+        BASE_WORLD, scenario.get('actors', []), world_path,
+        scenario_name=scenario['name'])
 
     launch_cmd = [
         'ros2', 'launch', 'go2_simulation', 'unitree_go2_launch_small_city.py',
@@ -121,8 +123,13 @@ def run_trial(scenario, trial_idx, degrade_profile, log, gui=False):
 
     oracle = metrics.parse_oracle_csv(oracle_csv)
     driver_m = metrics.parse_states_csv(states_csv)
-    passed, failures = metrics.evaluate(
-        oracle, driver_m, scenario.get('criteria', {}))
+    criteria = dict(scenario.get('criteria', {}))
+    if degrade_profile:
+        # 열화 런 전용 기준 오버레이 — 센서 열화로 정보 도달이 늦어 물리적으로
+        # 달성 불가능한 항목(예: 조기정지 사치 마진)만 명시적으로 재정의.
+        # 안전 의미론 항목(충돌/최소 이격/상태)은 오버레이하지 않는 것이 원칙.
+        criteria.update(scenario.get('criteria_degraded', {}))
+    passed, failures = metrics.evaluate(oracle, driver_m, criteria)
     return {'run_dir': run_dir, 'passed': passed, 'failures': failures,
             'oracle': oracle, 'driver': driver_m}
 

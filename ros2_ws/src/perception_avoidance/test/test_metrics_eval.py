@@ -77,3 +77,58 @@ def test_no_stop_fails_when_required(tmp_path):
     passed, failures = metrics.evaluate(
         oracle, driver, {'require_stop_during_actor_motion': True})
     assert not passed
+
+
+# ---- P4 자전거 판정: clearance@STOP + no-RESUME-before-CPA ----
+
+def test_cpa_t_and_clearance_series_parsed(tmp_path):
+    # center_dist가 t=3에서 최소(1.0) → cpa_t=3
+    rows = [(1, 'bike', 5.0, 5.5, 15, 5.2, 9.5, 5.2),
+            (2, 'bike', 2.0, 2.5, 15, 5.2, 12.5, 5.2),
+            (3, 'bike', 0.6, 1.0, 15, 5.2, 15.0, 6.2),
+            (4, 'bike', 3.0, 3.5, 15, 5.2, 18.5, 6.6)]
+    oracle = metrics.parse_oracle_csv(write_oracle(tmp_path, rows))
+    assert oracle['cpa_t'] == 3
+    assert oracle['clearance_series'][0] == (1, 5.0)
+
+
+def test_first_resume_t_parsed_only_after_stop(tmp_path):
+    driver = metrics.parse_states_csv(write_states(
+        tmp_path, [(10.0, 'SLOW_DOWN'), (12.0, 'STOP'),
+                   (14.0, 'WAIT'), (15.5, 'RESUME')]))
+    assert driver['first_resume_t'] == 15.5
+
+
+def test_clearance_at_stop_gate(tmp_path):
+    oracle = {'min_clearance': 0.9, 'collisions': 0,
+              'clearance_series': [(10.0, 6.0), (12.0, 4.5), (14.0, 0.9)]}
+    driver = {'states': ['STOP'], 'stop_entries': 1, 'travel': 5.0,
+              'collision_events': 0, 'first_stop_t': 12.1}
+    # STOP 시점(t≈12) clearance 4.5 > 2.0 → PASS
+    passed, failures = metrics.evaluate(
+        oracle, driver, {'min_clearance_at_stop_gt': 2.0})
+    assert passed, failures
+    # 늦은 STOP(t≈14, clearance 0.9) → FAIL
+    driver['first_stop_t'] = 14.2
+    passed, failures = metrics.evaluate(
+        oracle, driver, {'min_clearance_at_stop_gt': 2.0})
+    assert not passed
+    assert any('clearance at STOP' in f for f in failures)
+
+
+def test_no_resume_before_cpa_gate(tmp_path):
+    oracle = {'min_clearance': 0.9, 'collisions': 0, 'cpa_t': 13.2}
+    driver = {'states': ['STOP', 'WAIT', 'RESUME'], 'stop_entries': 1,
+              'travel': 5.0, 'collision_events': 0,
+              'first_stop_t': 11.0, 'first_resume_t': 12.5}
+    passed, failures = metrics.evaluate(
+        oracle, driver, {'require_no_resume_before_cpa': True})
+    assert not passed
+    assert any('before CPA' in f for f in failures)
+    # CPA 이후 RESUME → PASS. RESUME 없음(계속 대기)도 PASS.
+    driver['first_resume_t'] = 14.5
+    assert metrics.evaluate(
+        oracle, driver, {'require_no_resume_before_cpa': True})[0]
+    driver['first_resume_t'] = None
+    assert metrics.evaluate(
+        oracle, driver, {'require_no_resume_before_cpa': True})[0]

@@ -9,7 +9,7 @@
 cd ~/unitree_go2_sidewalk_navigation
 source /opt/ros/jazzy/setup.bash && source install/setup.bash
 
-# 전체 회귀 (시나리오 4종 × 5회)
+# 전체 회귀 (scenarios/ 전부 × 5회)
 python3 verification/run_scenario.py --all -n 5 --out verification/phase3_regression.csv
 
 # 단일 시나리오
@@ -46,7 +46,18 @@ exit code 0 = 전부 PASS. trial별 산출물(월드/oracle CSV/상태 로그/la
 - criteria 키: `max_collisions`, `min_clearance_gt`, `require_states`,
   `forbid_states`, `max_stop_entries`, `min_travel_m`,
   `require_stop_during_actor_motion`(STOP이 actor 이동 중에 발화 — 접근
-  시나리오의 타이밍 퇴화 방지).
+  시나리오의 타이밍 퇴화 방지),
+  `min_clearance_at_stop_gt`(P4: 첫 STOP 진입 순간의 clearance — 고속 물체
+  조기 정지 게이트; run 전체 min과 달리 이후의 측방 통과에 오염되지 않음),
+  `require_no_resume_before_cpa`(P4: 최근접 통과(center_dist 최소 시각) 전
+  RESUME 금지 — CPA 통과까지 STOP 유지 검증).
+- `criteria_degraded:` — `--degrade` 런에서 기존 criteria 위에 겹치는 오버레이.
+  센서 열화로 물리적으로 달성 불가한 항목(조기정지 사치 마진)만 명시적으로
+  재정의하는 용도 — 안전 의미론 항목(충돌/최소 이격/상태)은 오버레이 금지.
+- **고속 actor(자전거 대역)**: 보행자 actor를 고속 waypoint로 구동 (임시 표현 —
+  최종적으로 사람+자전거 메시로 교체 예정). 안무는 접근 → 정지한 로봇을
+  피해 가는 veer → 후방 이탈 hold 형태로, 로봇이 어떤 게이트 버전에서 멈춰도
+  충돌하지 않게 설계한다 (`bike_head_on.yaml` 참조).
 
 ## Headless 주의
 

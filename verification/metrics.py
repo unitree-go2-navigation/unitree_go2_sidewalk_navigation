@@ -14,15 +14,19 @@ FINAL_DIST_EPS = 0.05
 
 
 def parse_oracle_csv(path):
-    """→ {min_clearance, collisions, actor_motion_end}.
+    """→ {min_clearance, collisions, actor_motion_end, clearance_series, cpa_t}.
 
     파일 없음/행 없음 = actor 없는 시나리오.
     actor_motion_end = 어떤 actor든 최종 위치에서 FINAL_DIST_EPS 밖에 있던
     마지막 sim 시각 (전혀 이동 안 했으면 None).
+    cpa_t = center_dist가 최소인 sim 시각 (최근접 통과 시점 — P4 자전거 판정).
     """
     min_clearance = float('inf')
     collisions = 0
     tracks = {}                      # name → [(t, x, y), ...]
+    clearance_series = []            # [(t, clearance), ...]
+    cpa_t = None
+    cpa_dist = float('inf')
     try:
         with open(path) as f:
             header = f.readline()
@@ -35,6 +39,11 @@ def parse_oracle_csv(path):
                 parts = line.strip().split(',')
                 if len(parts) >= 3:
                     min_clearance = min(min_clearance, float(parts[2]))
+                    clearance_series.append(
+                        (float(parts[0]), float(parts[2])))
+                if len(parts) >= 4 and float(parts[3]) < cpa_dist:
+                    cpa_dist = float(parts[3])
+                    cpa_t = float(parts[0])
                 if len(parts) >= 8:
                     tracks.setdefault(parts[1], []).append(
                         (float(parts[0]), float(parts[6]), float(parts[7])))
@@ -49,17 +58,20 @@ def parse_oracle_csv(path):
                     actor_motion_end = t
                 break
     return {'min_clearance': min_clearance, 'collisions': collisions,
-            'actor_motion_end': actor_motion_end}
+            'actor_motion_end': actor_motion_end,
+            'clearance_series': clearance_series, 'cpa_t': cpa_t}
 
 
 def parse_states_csv(path):
     """→ {states(순서, 중복 제거), stop_entries, travel, collision_events,
-    first_stop_t(첫 STOP 진입 sim 시각, 없으면 None)}."""
+    first_stop_t(첫 STOP 진입 sim 시각, 없으면 None),
+    first_resume_t(첫 STOP 이후 첫 RESUME 진입 시각, 없으면 None)}."""
     states = []
     travel = 0.0
     stop_entries = 0
     collision_events = 0
     first_stop_t = None
+    first_resume_t = None
     with open(path) as f:
         f.readline()
         for line in f:
@@ -80,9 +92,12 @@ def parse_states_csv(path):
                 states.append(parts[1])
                 if parts[1] == 'STOP' and first_stop_t is None:
                     first_stop_t = float(parts[0])
+                if (parts[1] == 'RESUME' and first_stop_t is not None
+                        and first_resume_t is None):
+                    first_resume_t = float(parts[0])
     return {'states': states, 'stop_entries': stop_entries,
             'travel': travel, 'collision_events': collision_events,
-            'first_stop_t': first_stop_t}
+            'first_stop_t': first_stop_t, 'first_resume_t': first_resume_t}
 
 
 def evaluate(oracle, driver, criteria):
@@ -116,6 +131,33 @@ def evaluate(oracle, driver, criteria):
     min_travel = criteria.get('min_travel_m')
     if min_travel is not None and driver['travel'] < min_travel:
         failures.append(f"travel {driver['travel']:.2f}m < {min_travel}m")
+
+    # P4 조기 STOP 게이트: 첫 STOP 진입 시점의 oracle clearance가 임계 초과.
+    # (고속 물체는 원거리에서 멈춰야 함 — run 전체 min_clearance는 이후의
+    #  측방 통과(CPA)로 작아지므로 "STOP 순간" 값을 본다)
+    clr_at_stop_gt = criteria.get('min_clearance_at_stop_gt')
+    if clr_at_stop_gt is not None:
+        stop_t = driver.get('first_stop_t')
+        series = oracle.get('clearance_series') or []
+        if stop_t is None:
+            failures.append('no STOP entry (clearance_at_stop)')
+        elif not series:
+            failures.append('no oracle rows (clearance_at_stop)')
+        else:
+            clr = min(series, key=lambda r: abs(r[0] - stop_t))[1]
+            if not clr > clr_at_stop_gt:
+                failures.append(
+                    f'clearance at STOP {clr:.2f} <= {clr_at_stop_gt}')
+
+    # P4 CPA 유지 게이트: 최근접 통과(cpa_t) 전에는 RESUME 금지.
+    if criteria.get('require_no_resume_before_cpa'):
+        resume_t = driver.get('first_resume_t')
+        cpa_t = oracle.get('cpa_t')
+        if cpa_t is None:
+            failures.append('no oracle rows (no_resume_before_cpa)')
+        elif resume_t is not None and resume_t < cpa_t:
+            failures.append(
+                f'RESUME t={resume_t:.1f} before CPA t={cpa_t:.1f}')
 
     # 상대속도 경로 게이트: STOP이 actor 이동 "중"(종료 0.5s 이전)에 발화해야 함.
     # 타이밍 퇴화(주행 시작 전에 actor 보행이 끝나는 안무)를 FAIL로 잡는다.
