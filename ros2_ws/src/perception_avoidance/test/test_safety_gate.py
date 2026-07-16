@@ -9,7 +9,7 @@ import math
 import pytest
 from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
 
-from perception_avoidance.safety_stop_node import SafetyStopNode, State
+from perception_avoidance.safety_stop_node import SafetyStopNode, State, cpa
 
 
 CORRIDOR_HALF = 0.335  # robot_half_width(0.155) + corridor_margin(0.18)
@@ -37,9 +37,14 @@ def make_det(cx, cy, sx=0.4, sy=0.4, vx=0.0, vy=0.0, cfx=None, det_id=''):
     return det
 
 
-def feed(node, dets, robot_vx=0.0):
+def feed(node, dets, robot_vx=0.0, stamp_lag=0.0):
+    """stamp_lag: 메시지 stamp를 현재보다 이만큼 과거로 — latency 보상 테스트용.
+    기본 0 = 지연 없음 (기하 그대로 판정)."""
     node.robot_vx = robot_vx
     msg = Detection3DArray()
+    t = node.get_clock().now().nanoseconds * 1e-9 - stamp_lag
+    msg.header.stamp.sec = int(t)
+    msg.header.stamp.nanosec = int((t - int(t)) * 1e9)
     msg.detections.extend(dets)
     node.obs_cb(msg)
 
@@ -345,3 +350,178 @@ def test_blind_hold_inherits_lateral_velocity_memory(node):
     node._blind_hold['t'] -= 20.0
     feed(node, [])
     assert math.isinf(node.min_clearance)   # 승계된 vy로 예측 이탈 해제
+
+
+# --- P4: CPA(최근접점) + fast-class (자전거/킥보드) ---
+
+def test_cpa_head_on_collision_course():
+    t, d = cpa(10.0, 0.0, -5.0, 0.0)
+    assert t == pytest.approx(2.0)
+    assert d == pytest.approx(0.0, abs=1e-9)
+
+
+def test_cpa_side_pass_keeps_miss_distance():
+    t, d = cpa(10.0, 1.5, -5.0, 0.0)
+    assert t == pytest.approx(2.0)
+    assert d == pytest.approx(1.5)
+
+
+def test_cpa_receding_clamps_to_now():
+    t, d = cpa(5.0, 0.0, 2.0, 0.0)
+    assert t == 0.0
+    assert d == pytest.approx(5.0)
+
+
+def test_cpa_zero_velocity_infinite_time():
+    t, d = cpa(3.0, 4.0, 0.0, 0.0)
+    assert math.isinf(t)
+    assert d == pytest.approx(5.0)
+
+
+def test_fast_head_on_stops_earlier_than_ttc_path(node):
+    # 정면 자전거 5m/s, 10m: 구 TTC 경로는 ttc=9.45/5=1.89 > stop_ttc(1.0)로
+    # 아직 미정지 구간 — fast-class CPA 경로가 t_cpa 2.0 ≤ fast_stop_ttc로 STOP.
+    # 트리거는 같은 track의 연속 3프레임(fast_trig_frames) 지속 후 발효.
+    feed(node, [make_det(10.0, 0.0, vx=-5.0, det_id='9')])
+    assert math.isinf(node.min_fast_tcpa)          # 1프레임: 아직 미발효
+    for _ in range(3):
+        feed(node, [make_det(10.0, 0.0, vx=-5.0, det_id='9')])
+    assert node.min_fast_tcpa == pytest.approx(2.0, abs=0.05)
+    in_stop, in_slow = node._danger_levels()
+    assert in_stop and in_slow
+
+
+def test_fast_side_pass_no_reaction(node):
+    # 측방 1.5m 평행 통과(코리도 밖): d_cpa=1.5 > 0.25+0.2+0.4·2.0=1.25 → 무반응
+    feed(node, [make_det(10.0, 1.5, vx=-5.0)])
+    assert math.isinf(node.min_fast_tcpa)
+    in_stop, in_slow = node._danger_levels()
+    assert not in_stop and not in_slow
+
+
+def test_fast_crossing_into_corridor_triggers_outside_corridor(node):
+    # 코리도 밖(측방 6m)이지만 충돌 코스로 진입하는 자전거: v ∝ -p → d_cpa=0
+    for _ in range(4):
+        feed(node, [make_det(8.0, -6.0, vx=-4.0, vy=3.0, det_id='9')])
+    assert node.min_fast_tcpa == pytest.approx(2.0, abs=0.05)
+    in_stop, _ = node._danger_levels()
+    assert in_stop
+
+
+def test_slow_crossing_ped_not_fast_class(node):
+    # 같은 기하, 속도 1m/s(보행자): fast 경로 비활성 (구 코리도 로직 몫)
+    feed(node, [make_det(8.0, -6.0, vx=-0.8, vy=0.6)])
+    assert math.isinf(node.min_fast_tcpa)
+
+
+def test_fast_slow_zone_before_stop_zone(node):
+    # t_cpa=3: fast_slow_ttc(4.0) 이내, fast_stop_ttc(2.0) 밖 → SLOW만
+    for _ in range(4):
+        feed(node, [make_det(15.0, 0.0, vx=-5.0, det_id='9')])
+    in_stop, in_slow = node._danger_levels()
+    assert not in_stop and in_slow
+
+
+def test_fast_hold_keeps_wait_until_cpa_passed(node):
+    # 정지 후(WAIT) 자전거가 옆으로 비켜(1.4m) 최근접 접근 중: CPA 통과 전
+    # 재출발 금지. 단 NOMINAL에서는 같은 관측이 정지를 만들지 않음(false stop 방지).
+    feed(node, [make_det(2.0, 1.4, vx=-5.0)])
+    node.state = State.WAIT
+    in_stop, _ = node._danger_levels()
+    assert in_stop
+    node.state = State.NOMINAL
+    in_stop, _ = node._danger_levels()
+    assert not in_stop
+
+
+def test_fast_hold_releases_after_pass(node):
+    # 같은 자전거가 CPA를 지나 멀어지는 중(closing<0) → WAIT 해제 가능
+    feed(node, [make_det(1.0, 1.4, vx=5.0)])
+    node.state = State.WAIT
+    in_stop, _ = node._danger_levels()
+    assert not in_stop
+
+
+def test_latency_compensation_advances_fast_object(node):
+    # 파이프라인 지연 0.2s: 관측 cx=10.5이지만 실제로는 10.5-5·0.2=9.5 —
+    # 전파 후 t_cpa 1.9 ≤ fast_stop_ttc(2.0) → STOP. 보상 없으면 2.1로 미달.
+    for _ in range(4):
+        feed(node, [make_det(10.5, 0.0, vx=-5.0, det_id='9')], stamp_lag=0.2)
+    assert node.min_fast_tcpa == pytest.approx(1.9, abs=0.05)
+    in_stop, _ = node._danger_levels()
+    assert in_stop
+    # 같은 기하, 지연 없음 → t_cpa 2.1 > 2.0 → SLOW만
+    feed(node, [make_det(10.5, 0.0, vx=-5.0, det_id='9')])
+    in_stop, in_slow = node._danger_levels()
+    assert not in_stop and in_slow
+
+
+def test_latency_clamped_to_max(node):
+    # stamp가 비정상적으로 과거(10s)여도 전파는 cvm_latency_max(0.3s)로 제한
+    for _ in range(4):
+        feed(node, [make_det(10.5, 0.0, vx=-5.0, det_id='9')], stamp_lag=10.0)
+    assert node.min_fast_tcpa == pytest.approx(1.8, abs=0.05)
+
+
+def test_clutter_velocity_spike_filtered_by_persistence(node):
+    # 클러터 centroid 요동: 단발 스파이크(충돌 코스 방향이어도)는 3프레임
+    # 지속을 못 채워 무반응 — 유령 STOP 방지 (bike smoke 8회 정지 회귀 케이스)
+    feed(node, [make_det(6.0, 0.0, vx=-4.0, det_id='7')])
+    feed(node, [make_det(6.0, 0.0, vx=0.2, det_id='7')])    # 스파이크 소멸
+    feed(node, [make_det(6.0, 0.0, vx=-3.5, det_id='7')])
+    feed(node, [make_det(6.0, 0.0, vx=0.1, det_id='7')])
+    assert math.isinf(node.min_fast_tcpa)
+    # track id가 갈리는 churn 스파이크도 카운트가 이어지지 않음
+    feed(node, [make_det(6.0, 0.0, vx=-4.0, det_id='11')])
+    feed(node, [make_det(6.0, 0.0, vx=-4.0, det_id='12')])
+    feed(node, [make_det(6.0, 0.0, vx=-4.0, det_id='13')])
+    assert math.isinf(node.min_fast_tcpa)
+
+
+def test_fast_trigger_survives_single_dropout_frame(node):
+    # 감쇠형 카운트: 열화 dropout 한 프레임(탐지 소실)에 카운트가 리셋되지
+    # 않고 -1만 — trig,trig,소실,trig,trig 패턴이면 발화 (연속 요구는 미발화)
+    d = make_det(10.0, 0.0, vx=-5.0, det_id='9')
+    feed(node, [d]); feed(node, [d]); feed(node, [d])
+    feed(node, [])                       # dropout: 카운트 3→2 (감쇠 — 유령 방지)
+    feed(node, [d]); feed(node, [d])     # 3→4 → 발화
+    assert node.min_fast_tcpa == pytest.approx(2.0, abs=0.05)
+
+
+def test_alternating_boundary_noise_never_fires(node):
+    # 측방 통과 자전거의 vy 노이즈: 트리거/미트리거 교대는 1~2에 머묾
+    on = make_det(10.0, 0.0, vx=-5.0, det_id='9')
+    off = make_det(10.0, 1.5, vx=-5.0, det_id='9')   # 미스거리 커서 미트리거
+    for _ in range(6):
+        feed(node, [on])
+        feed(node, [off])
+        assert math.isinf(node.min_fast_tcpa)
+
+
+def test_rotation_sweep_not_fast_class(node):
+    # 회전 프레임 보정: 로봇이 0.5rad/s로 돌면 6m 정적 물체가 3m/s로 쓸려
+    # 보임(v_sweep=(ω·cy, -ω·cx)) — 보정 없으면 위빙 중 유령 STOP 연발 (데모
+    # 실측). 정확히 스윕 성분만 갖는 탐지는 fast 후보가 아니어야 한다.
+    node.robot_wz = 0.5
+    d = make_det(6.0, 2.0, vx=0.5 * 2.0, vy=-0.5 * 6.0, det_id='9')
+    for _ in range(4):
+        feed(node, [d])
+    assert math.isinf(node.min_fast_tcpa)
+    # 같은 기하라도 진짜 접근 속도가 실리면(스윕+병진) 보정 후에도 fast
+    node.robot_wz = 0.5
+    d2 = make_det(10.0, 0.0, vx=-5.0, vy=-0.5 * 10.0, det_id='7')
+    for _ in range(4):
+        feed(node, [d2])
+    assert node.min_fast_tcpa == pytest.approx(2.0, abs=0.05)
+
+
+def test_extended_structure_excluded_from_fast_class(node):
+    # 확장 구조물(울타리 파편, bbox 한 변 > fast_max_extent)은 속도가 커
+    # 보여도 fast 후보가 아님 — 가림 경계에서 '자라는' 클러스터의 지속성
+    # 유사속도가 만드는 false stop 차단 (bike_pass ~2/10 flake 실측)
+    big = make_det(10.0, 0.0, sx=3.5, sy=0.4, vx=-5.0, det_id='9')
+    for _ in range(5):
+        feed(node, [big])
+    assert math.isinf(node.min_fast_tcpa)
+    in_stop, _ = node._danger_levels()
+    assert not in_stop

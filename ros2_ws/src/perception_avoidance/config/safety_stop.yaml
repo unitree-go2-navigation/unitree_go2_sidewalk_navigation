@@ -47,6 +47,38 @@ safety_stop_node:
     # Min closing speed (m/s) to treat an obstacle as approaching
     closing_eps: 0.05
 
+    # P4 fast-class (자전거/킥보드): |v_rel| > fast_speed_thresh인 물체는
+    # 코리도 점유와 무관하게 CPA(최근접점) 미스거리로 조기 반응.
+    #   트리거: d_CPA < cpa_halfwidth + cpa_margin + cpa_growth·t_CPA
+    #           AND t_CPA < cpa_max_t
+    #   반응: t_CPA ≤ fast_stop_ttc → STOP, ≤ fast_slow_ttc → SLOW
+    # 측방 1.5m 평행 통과는 d_CPA=1.5 > 1.25(t_CPA 2s 기준)로 무반응 (bike_pass).
+    # 정적 클러터는 |v_rel|≈로봇 속도(≤0.5)라 fast 임계에 안 걸림.
+    fast_speed_thresh: 2.0
+    fast_stop_ttc: 2.0     # 5m/s 기준 ~11m에서 STOP — 감지 ROI 15m 이내
+    fast_slow_ttc: 4.0
+    cpa_max_t: 4.0
+    cpa_halfwidth: 0.25    # Go2 유효폭 0.5m(gait sway 포함)의 절반
+    cpa_margin: 0.2        # 상대 물체 반경 여유
+    cpa_growth: 0.4        # CVM 예측 불확실 팽창 (m/s)
+    # STOP/WAIT 중 fast 물체가 이 미스거리 안에서 아직 접근 중이면 재출발 금지
+    # (CPA 통과 = 멀어짐 전환까지 STOP 유지). NOMINAL 주행에는 미적용.
+    fast_hold_radius: 2.0
+    # latency 보상 상한 (s): 지연은 메시지별 실측(수신 시각 − 스캔 stamp),
+    # fast 물체만 CVM 전방 전파. 실기체 파이프라인 실측치로 상한 재검토 (P8).
+    cvm_latency_max: 0.3
+    # fast 트리거 지속 조건: 같은 track id의 트리거 카운트(+1/미트리거 -1,
+    # 감쇠형)가 이 값에 도달해야 반응 — 클러터 centroid 요동의 단발 속도
+    # 스파이크(실측 ~8m/s)와 측방 통과 자전거의 vy 노이즈 교대 트리거를
+    # 거르되, 열화 dropout 한 프레임에는 리셋되지 않음 (연속 요구의 약점).
+    # 4 (3→4): 가림 경계의 지속성 유사속도가 3을 ~2/10 run 빈도로 뚫음.
+    # 비용: 5m/s 기준 0.4s = 2.2m 접근 후 확정 (탐지 ~14m에서 여유 충분).
+    fast_trig_frames: 4
+    # fast-class 크기 상한: 자전거/킥보드/사람 부류는 compact. bbox 한 변이
+    # 이보다 긴 확장 구조물(울타리 파편)은 fast 후보 제외 — 가림 경계에서
+    # 한쪽으로 '자라는' 클러스터의 유사속도 차단 (false stop 근원).
+    fast_max_extent: 2.2
+
     # Let rotation (angular.z) pass through while SLOW/STOP (turn away instead
     # of deadlocking facing an obstacle). Forward/lateral/reverse stay gated.
     pass_rotation_when_blocked: true

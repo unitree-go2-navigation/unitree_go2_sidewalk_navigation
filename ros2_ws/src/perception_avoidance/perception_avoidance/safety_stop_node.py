@@ -44,6 +44,19 @@ class State(Enum):
     ESTOP = 'ESTOP'
 
 
+def cpa(cx, cy, vx, vy):
+    """상대 위치/속도 → (t_cpa, d_cpa): 최근접점까지 시간·미스거리 (P4).
+
+    t_cpa = argmin|p + v·t| = -(p·v)/|v|² (과거면 0으로 클램프 = 이미 통과/
+    멀어짐). 속도 ~0이면 (inf, 현재거리) — 정지 물체는 거리/코리도 로직 몫.
+    """
+    v2 = vx * vx + vy * vy
+    if v2 < 1e-6:
+        return math.inf, math.hypot(cx, cy)
+    t = max(0.0, -(cx * vx + cy * vy) / v2)
+    return t, math.hypot(cx + vx * t, cy + vy * t)
+
+
 class SafetyStopNode(Node):
     def __init__(self):
         super().__init__('safety_stop_node')
@@ -96,6 +109,44 @@ class SafetyStopNode(Node):
         self.declare_parameter('blind_hold_clearance', 0.60)
         # Min closing speed (m/s) to treat an obstacle as approaching
         self.declare_parameter('closing_eps', 0.05)
+
+        # P4 fast-class (자전거/킥보드, |v_rel|>2m/s): 코리도 점유와 무관하게
+        # CPA(최근접점) 미스거리로 "진로로 오는" 물체만 조기 반응.
+        #   트리거: d_CPA < cpa_halfwidth + cpa_margin + cpa_growth·t_CPA
+        #           AND t_CPA < cpa_max_t   (Fiorini VO/CPA + CVM 반경 팽창)
+        #   반응: t_CPA ≤ fast_stop_ttc → STOP / ≤ fast_slow_ttc → SLOW
+        #   (ISO 22839 AEB 관행 — 고속 물체엔 회피가 아니라 조기 정지)
+        self.declare_parameter('fast_speed_thresh', 2.0)
+        self.declare_parameter('fast_stop_ttc', 2.0)
+        self.declare_parameter('fast_slow_ttc', 4.0)
+        self.declare_parameter('cpa_max_t', 4.0)
+        # Go2 유효 반폭 (gait sway 포함 유효폭 0.5m의 절반)
+        self.declare_parameter('cpa_halfwidth', 0.25)
+        # 상대 물체 반경 여유 (m)
+        self.declare_parameter('cpa_margin', 0.2)
+        # 예측 불확실 팽창 (m/s) — CVM 반경 팽창 0.4m/s·t
+        self.declare_parameter('cpa_growth', 0.4)
+        # STOP/WAIT 중 fast 물체가 이 미스거리 안에서 아직 접근 중이면 재출발
+        # 금지 — CPA 통과(멀어짐 전환)까지 STOP 유지. NOMINAL에는 미적용
+        # (측방 통과 자전거에 대한 false stop 방지 — 주행 중 판단은 트리거 몫).
+        self.declare_parameter('fast_hold_radius', 2.0)
+        # latency 보상 상한 (s): 파이프라인 지연(수신 시각 − LiDAR 스캔 stamp,
+        # 메시지별 실측)만큼 fast 물체를 CVM 전방 전파. 5m/s에서 지연 0.15s =
+        # 위치 오차 0.75m — fast 경로에만 적용 (저속/정적은 기존 마진이 흡수,
+        # 클러터의 노이즈 속도로 clearance를 오염시키지 않기 위함).
+        self.declare_parameter('cvm_latency_max', 0.3)
+        # fast 트리거 지속 조건 (감쇠 카운트 문턱, 같은 track id): 정적
+        # 클러터(울타리 등 확장 물체)의 centroid 요동이 만드는 단발 속도
+        # 스파이크(실측 최대 ~8m/s, 방향 무작위)가 유령 STOP을 만들지 않도록.
+        # 진짜 자전거는 예측 연관으로 id가 유지되며 매 프레임 트리거 → 4프레임
+        # (0.4s, 5m/s 기준 2.2m 접근) 확인 비용. 3에서는 가림 경계의 지속성
+        # 유사속도가 ~2/10 run 빈도로 뚫음 (bike_pass false stop 실측).
+        self.declare_parameter('fast_trig_frames', 4)
+        # fast-class 크기 상한 (m): 자전거/킥보드/사람 부류는 compact —
+        # bbox 한 변이 이보다 긴 확장 구조물(울타리/벽 파편)은 fast 후보에서
+        # 제외 (가림 경계에서 한쪽으로 '자라는' 클러스터의 유사속도 차단).
+        # GLB 자전거+탑승자 대각 투영 ~1.9m < 2.2.
+        self.declare_parameter('fast_max_extent', 2.2)
         # Let rotation (angular.z) pass through while SLOW/STOP so the robot can
         # turn away from a blocking obstacle instead of deadlocking facing it.
         self.declare_parameter('pass_rotation_when_blocked', True)
@@ -151,6 +202,17 @@ class SafetyStopNode(Node):
         self.sensor_timeout = gp('sensor_timeout').value
         self.enable_gate = gp('enable_gate').value
         self.closing_eps = gp('closing_eps').value
+        self.fast_speed = gp('fast_speed_thresh').value
+        self.fast_stop_ttc = gp('fast_stop_ttc').value
+        self.fast_slow_ttc = gp('fast_slow_ttc').value
+        self.cpa_max_t = gp('cpa_max_t').value
+        self.cpa_halfwidth = gp('cpa_halfwidth').value
+        self.cpa_margin = gp('cpa_margin').value
+        self.cpa_growth = gp('cpa_growth').value
+        self.fast_hold_radius = gp('fast_hold_radius').value
+        self.cvm_latency_max = gp('cvm_latency_max').value
+        self.fast_trig_frames = int(gp('fast_trig_frames').value)
+        self.fast_max_extent = gp('fast_max_extent').value
         self.pass_rotation = gp('pass_rotation_when_blocked').value
         self.stuck_enable = gp('stuck_enable').value
         self.stuck_v_min = gp('stuck_v_min').value
@@ -180,11 +242,15 @@ class SafetyStopNode(Node):
         self.cmd_in = Twist()
         self.cmd_in_stamp = None
         self.robot_vx = 0.0
+        self.robot_wz = 0.0
         self.robot_x = 0.0
         self.robot_y = 0.0
         self.obs_stamp = None
         self.min_clearance = math.inf
         self.min_ttc = math.inf
+        self.min_fast_tcpa = math.inf   # fast-class CPA 트리거 중 최소 t_CPA
+        self._fast_near = False         # fast 물체가 근접 CPA로 아직 접근 중
+        self._fast_trig = {}            # track id → (트리거 카운트, 연속 미관측 수)
         self._blind_hold = None      # (front_x, clr) — 사각 소실 유지 중
         self._left_min = math.inf
         self._right_min = math.inf
@@ -216,13 +282,21 @@ class SafetyStopNode(Node):
 
     def odom_cb(self, msg: Odometry):
         self.robot_vx = msg.twist.twist.linear.x
+        self.robot_wz = msg.twist.twist.angular.z
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
 
     def obs_cb(self, msg: Detection3DArray):
         self.obs_stamp = self.get_clock().now().nanoseconds * 1e-9
+        # 파이프라인 latency 실측 (LiDAR 스캔 stamp → 게이트 수신).
+        # fast-class CPA 판정에서 물체를 이만큼 CVM 전방 전파한다.
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        lat = min(max(self.obs_stamp - stamp, 0.0), self.cvm_latency_max)
         min_clr = math.inf
         min_ttc = math.inf
+        min_fast_tcpa = math.inf
+        fast_near = False
+        fast_trig = {}
         left_min = math.inf
         right_min = math.inf
         min_hold = None
@@ -241,6 +315,50 @@ class SafetyStopNode(Node):
                 left_min = min(left_min, front_face)
             else:
                 right_min = min(right_min, front_face)
+
+            # Relative velocity (base_link) embedded by lidar_obstacle_node in
+            # covariance[0]=vx, covariance[1]=vy — travels atomically with the
+            # detection, so there is no cross-topic ordering race.
+            vx = vy = 0.0
+            if det.results:
+                cov = det.results[0].pose.covariance
+                vx, vy = cov[0], cov[1]
+            pdist = math.hypot(cx, cy)
+
+            # P4 fast-class CPA: 코리도 점유와 무관하게 (측방에서 진로로
+            # 진입하는 자전거 포함) "진로로 오는" 고속 물체만 조기 반응.
+            # 정적 클러터는 |v_rel|≈로봇 속도(≤0.5)라 임계(2.0)에 안 걸림.
+            # ⚠ 회전 스윕 보정: base_link는 회전 프레임이라 로봇이 돌면
+            # (조향/위빙) 정적 물체가 ω×r로 쓸려 보임 — r=5m·0.5rad/s면
+            # 2.5m/s 유령 fast (데모 위빙에서 STOP 연발 실측). 정적 물체의
+            # 회전 성분 v_sweep = (ω·y, -ω·x)를 제거한 병진 상대속도로 판정.
+            vxc = vx - self.robot_wz * cy
+            vyc = vy + self.robot_wz * cx
+            if (math.hypot(vxc, vyc) > self.fast_speed
+                    and det.bbox.size.x <= self.fast_max_extent
+                    and det.bbox.size.y <= self.fast_max_extent):
+                # latency 보상: 관측 시점 이후 이동분(v·lat)을 전방 전파
+                fx, fy = cx + vxc * lat, cy + vyc * lat
+                t_cpa, d_cpa = cpa(fx, fy, vxc, vyc)
+                if t_cpa < self.cpa_max_t:
+                    if d_cpa < (self.cpa_halfwidth + self.cpa_margin
+                                + self.cpa_growth * t_cpa):
+                        # 지속 조건: 같은 track의 트리거 카운트(+1/미트리거
+                        # −1 감쇠, 루프 뒤 처리)가 문턱에 도달해야 반응 —
+                        # 경계 노이즈의 교대 트리거는 1~2에 머물러 발화 불가.
+                        cnt = min(self._fast_trig.get(det.id, 0) + 1,
+                                  self.fast_trig_frames)
+                        fast_trig[det.id] = cnt
+                        if cnt >= self.fast_trig_frames:
+                            min_fast_tcpa = min(min_fast_tcpa, t_cpa)
+                    fdist = math.hypot(fx, fy)
+                    closing_f = 0.0
+                    if fdist > 1e-3:
+                        closing_f = -(fx * vxc + fy * vyc) / fdist
+                    if (closing_f > self.closing_eps
+                            and d_cpa < self.fast_hold_radius):
+                        fast_near = True   # STOP/WAIT 중 재출발 금지 근거
+
             # Forward corridor: 판정 근거는 bbox 겹침이 아니라 클러스터 점 중
             # 코리도 안에 실제로 있는 최근접점 x (covariance[2], 없으면 -1).
             # 긴 평행 구조물(인도변 울타리)은 요 오차 시 axis-aligned bbox가
@@ -255,22 +373,13 @@ class SafetyStopNode(Node):
             # point to the robot's front body edge (footprint half-length).
             clr = corridor_front_x - self.robot_half_length
 
-            # Relative velocity (base_link) embedded by lidar_obstacle_node in
-            # covariance[0]=vx, covariance[1]=vy — travels atomically with the
-            # detection, so there is no cross-topic ordering race.
             #   closing = -dot(p_rel, v_rel) / |p_rel|   (positive = approaching)
             # Clamp to the static robot-speed estimate so we never under-react,
             # and a zero/missing velocity degrades gracefully to the static case.
-            vx = vy = 0.0
-            if det.results:
-                cov = det.results[0].pose.covariance
-                vx, vy = cov[0], cov[1]
-
             if clr < min_clr:
                 min_clr = clr
                 # blind-hold용: 최근접 물체의 track id·횡위치·횡속도 기억
                 min_hold = {'clr': clr, 'id': det.id, 'cy': cy, 'vy': vy}
-            pdist = math.hypot(cx, cy)
             closing = 0.0
             if pdist > 1e-3:
                 closing = -(cx * vx + cy * vy) / pdist
@@ -322,8 +431,18 @@ class SafetyStopNode(Node):
                 self._blind_hold = None
             else:
                 min_clr = hold['clr']
+        # 감쇠: 이번 프레임에 트리거하지 않은 track은 −1 (0이면 제거).
+        # ⚠ "미관측이면 카운트 유지" 변형은 금지 — 유령 fast 카운트가
+        # 깜빡임 너머로 존속해 bike_pass false stop 재발 (9회 정지 실측).
+        # 열화의 확정 창 부족은 criteria_degraded + 안무(veer 지연)가 담당.
+        for tid, cnt in self._fast_trig.items():
+            if tid not in fast_trig and cnt > 1:
+                fast_trig[tid] = cnt - 1
         self.min_clearance = min_clr
         self.min_ttc = min_ttc
+        self.min_fast_tcpa = min_fast_tcpa
+        self._fast_near = fast_near
+        self._fast_trig = fast_trig
         self._left_min = left_min
         self._right_min = right_min
 
@@ -339,6 +458,8 @@ class SafetyStopNode(Node):
         slow_clr = self.slow_clr
         stop_ttc = self.stop_ttc
         slow_ttc = self.slow_ttc
+        fast_stop_ttc = self.fast_stop_ttc
+        fast_slow_ttc = self.fast_slow_ttc
         # WAIT도 STOP과 같은 히스테리시스 유지: WAIT를 기본 임계로 판정하면
         # 물체가 emergency 바로 위(0.6~0.9)에 있을 때 "클리어"로 풀려
         # RESUME 돌진→재STOP 사이클로 마진을 갉아먹음 (2026-07-13 head_on).
@@ -347,11 +468,21 @@ class SafetyStopNode(Node):
             slow_clr += self.hyst_clr
             stop_ttc += self.hyst_ttc
             slow_ttc += self.hyst_ttc
+            fast_stop_ttc += self.hyst_ttc
+            fast_slow_ttc += self.hyst_ttc
         elif self.state == State.SLOW_DOWN:
             slow_clr += self.hyst_clr
             slow_ttc += self.hyst_ttc
-        in_stop = (clr <= emergency_clr) or (ttc <= stop_ttc)
-        in_slow = (clr <= slow_clr) or (ttc <= slow_ttc)
+            fast_slow_ttc += self.hyst_ttc
+        in_stop = (clr <= emergency_clr) or (ttc <= stop_ttc) \
+            or (self.min_fast_tcpa <= fast_stop_ttc)
+        in_slow = (clr <= slow_clr) or (ttc <= slow_ttc) \
+            or (self.min_fast_tcpa <= fast_slow_ttc)
+        # CPA 통과까지 STOP 유지: 정지 중에는 fast 물체가 근접 미스거리에서
+        # 아직 접근 중인 한(트리거 여부 무관 — 비켜 지나가는 중 포함) 재출발
+        # 금지. 멀어짐 전환(closing≤0) = CPA 통과가 해제 조건.
+        if self.state in (State.STOP, State.WAIT) and self._fast_near:
+            in_stop = True
         return in_stop, in_slow
 
     def _scale_for_slow(self):
