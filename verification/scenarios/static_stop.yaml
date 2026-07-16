@@ -1,4 +1,4 @@
-# 정적 정지: 정지한 보행자(정적 실린더)를 향해 직진 → SLOW 감속 후 표준 이격 유지.
+# 정적 정지: 정지한 보행자(서 있는 사람 메시 static 모델)를 향해 직진 → SLOW 감속 후 표준 이격 유지.
 # 정지 보행자는 actor가 아니라 static 모델 (퇴화 actor 궤적은 sim wedge — worlds.py 참조)
 name: static_stop
 actors:
@@ -8,7 +8,7 @@ actors:
     y: 5.2
 launch_args:
   world_init_heading: "3.141593"   # -x 방향(보행자 쪽)을 바라봄
-cmd_profile: [[0.0, 0.3, 0.0]]     # [t_start, vx, wz]
+cmd_profile: [[0.0, 0.5, 0.0]]     # [t_start, vx, wz]
 settle_time: 8.0
 duration: 30.0
 criteria:

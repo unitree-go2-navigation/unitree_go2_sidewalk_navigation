@@ -4,13 +4,25 @@ oracle CSV(clearance 시계열)와 driver states CSV(FSM 전이/이동거리)에
 trial 메트릭을 뽑아 시나리오 criteria와 비교, PASS/FAIL을 판정한다.
 """
 
+import math
 import re
+
+# actor가 "최종(hold) 위치"에서 이보다 멀면 아직 이동 중으로 본다.
+# (샘플 간 순간 변위 기준은 스플라인 easing으로 waypoint 근처에서 속도가
+#  출렁여 저속 꼬리를 놓침 — 최종 위치 기준이 샘플레이트에 무관하게 강건)
+FINAL_DIST_EPS = 0.05
 
 
 def parse_oracle_csv(path):
-    """→ {min_clearance, collisions}. 파일 없음/행 없음 = actor 없는 시나리오."""
+    """→ {min_clearance, collisions, actor_motion_end}.
+
+    파일 없음/행 없음 = actor 없는 시나리오.
+    actor_motion_end = 어떤 actor든 최종 위치에서 FINAL_DIST_EPS 밖에 있던
+    마지막 sim 시각 (전혀 이동 안 했으면 None).
+    """
     min_clearance = float('inf')
     collisions = 0
+    tracks = {}                      # name → [(t, x, y), ...]
     try:
         with open(path) as f:
             header = f.readline()
@@ -23,17 +35,31 @@ def parse_oracle_csv(path):
                 parts = line.strip().split(',')
                 if len(parts) >= 3:
                     min_clearance = min(min_clearance, float(parts[2]))
+                if len(parts) >= 8:
+                    tracks.setdefault(parts[1], []).append(
+                        (float(parts[0]), float(parts[6]), float(parts[7])))
     except FileNotFoundError:
         pass
-    return {'min_clearance': min_clearance, 'collisions': collisions}
+    actor_motion_end = None
+    for rows in tracks.values():
+        fx, fy = rows[-1][1], rows[-1][2]
+        for t, x, y in reversed(rows):
+            if math.hypot(x - fx, y - fy) > FINAL_DIST_EPS:
+                if actor_motion_end is None or t > actor_motion_end:
+                    actor_motion_end = t
+                break
+    return {'min_clearance': min_clearance, 'collisions': collisions,
+            'actor_motion_end': actor_motion_end}
 
 
 def parse_states_csv(path):
-    """→ {states(순서, 중복 제거), stop_entries, travel, collision_events}."""
+    """→ {states(순서, 중복 제거), stop_entries, travel, collision_events,
+    first_stop_t(첫 STOP 진입 sim 시각, 없으면 None)}."""
     states = []
     travel = 0.0
     stop_entries = 0
     collision_events = 0
+    first_stop_t = None
     with open(path) as f:
         f.readline()
         for line in f:
@@ -52,8 +78,11 @@ def parse_states_csv(path):
             parts = line.strip().split(',')
             if len(parts) == 2 and (not states or states[-1] != parts[1]):
                 states.append(parts[1])
+                if parts[1] == 'STOP' and first_stop_t is None:
+                    first_stop_t = float(parts[0])
     return {'states': states, 'stop_entries': stop_entries,
-            'travel': travel, 'collision_events': collision_events}
+            'travel': travel, 'collision_events': collision_events,
+            'first_stop_t': first_stop_t}
 
 
 def evaluate(oracle, driver, criteria):
@@ -87,5 +116,19 @@ def evaluate(oracle, driver, criteria):
     min_travel = criteria.get('min_travel_m')
     if min_travel is not None and driver['travel'] < min_travel:
         failures.append(f"travel {driver['travel']:.2f}m < {min_travel}m")
+
+    # 상대속도 경로 게이트: STOP이 actor 이동 "중"(종료 0.5s 이전)에 발화해야 함.
+    # 타이밍 퇴화(주행 시작 전에 actor 보행이 끝나는 안무)를 FAIL로 잡는다.
+    if criteria.get('require_stop_during_actor_motion'):
+        stop_t = driver.get('first_stop_t')
+        motion_end = oracle.get('actor_motion_end')
+        if stop_t is None:
+            failures.append('no STOP entry (stop_during_actor_motion)')
+        elif motion_end is None:
+            failures.append('actor never moved (stop_during_actor_motion)')
+        elif stop_t >= motion_end - 0.5:
+            failures.append(
+                f'STOP t={stop_t:.1f} not during actor motion '
+                f'(motion ended t={motion_end:.1f})')
 
     return (len(failures) == 0), failures

@@ -10,9 +10,9 @@ actors:
       - [30, 12.0, 7.0, 1.570796]
 launch_args:
   world_init_heading: "3.141593"
-cmd_profile: [[0.0, 0.3, 0.0]]
+cmd_profile: [[0.0, 0.5, 0.0]]
 settle_time: 8.0
-duration: 50.0
+duration: 30.0
 criteria:
   max_collisions: 0
   min_clearance_gt: 0.15

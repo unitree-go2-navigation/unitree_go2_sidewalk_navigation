@@ -35,15 +35,18 @@ exit code 0 = 전부 PASS. trial별 산출물(월드/oracle CSV/상태 로그/la
 
 ## 시나리오 작성 규칙
 
-- **gz `<actor>`는 사용 금지** — 스킨·속도 무관하게 headless(-s) 센서 렌더링
-  초기화 시 sim 루프를 wedge시킴 (증상: controller_manager 서비스 무응답 →
-  readiness timeout). 생성기가 이동 보행자를 WaypointMover 플러그인 구동
-  실린더 model로 만들어주므로 시나리오 YAML 형식은 그대로다.
-- **정지 보행자는 `static: true`** (정적 실린더 모델). 제자리/초저속
+- **이동 보행자는 사람 actor** — 단 안전 레시피를 생성기가 강제한다:
+  `loop=true` + `tension="1.0"` + `interpolate_x` 미사용 + `type="route"`.
+  `<loop>false</loop>`는 headless(-s) 센서 렌더링 초기화와 충돌해 sim 루프를
+  wedge시킴 (증상: controller_manager 서비스 무응답 → readiness timeout).
+- **정지 보행자는 `static: true`** (서 있는 사람 메시 모델 + oracle
+  actor_radius와 일치하는 충돌 실린더 r=0.3). 제자리/초저속
   세그먼트(이동 <0.05m 또는 <0.02m/s)는 생성기가 거부한다.
 - 이동 후 정지는 `loop: false`의 마지막 waypoint로 표현 (그 자리에 멈춤).
 - criteria 키: `max_collisions`, `min_clearance_gt`, `require_states`,
-  `forbid_states`, `max_stop_entries`, `min_travel_m`.
+  `forbid_states`, `max_stop_entries`, `min_travel_m`,
+  `require_stop_during_actor_motion`(STOP이 actor 이동 중에 발화 — 접근
+  시나리오의 타이밍 퇴화 방지).
 
 ## Headless 주의
 

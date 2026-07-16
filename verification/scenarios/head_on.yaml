@@ -1,19 +1,31 @@
-# 정면 접근: 보행자가 로봇을 향해 걸어옴(0.5m/s) → 상대속도 TTC로 STOP.
-# loop=false 궤적은 마지막 waypoint에서 정지(유지 세그먼트 불필요 — 퇴화 궤적 금지).
+# 정면 접근 v2 (로봇 0.5 m/s): 보행자가 현실 보행속도(1.2 m/s)로 정면 접근.
+# 검증 대상: ① SLOW가 상대속도 TTC 경로로 조기 발화 (정적 3.0m 대비 clr≈4.4m
+# 에서 진입 — 실측), ② STOP이 보행자 "이동 중" 발화 + 지속 접근 하 래치 유지
+# (require_stop_during_actor_motion — v1의 타이밍 퇴화를 FAIL로 잡는 게이트.
+#  v1은 보행이 t=12s에 끝나 STOP(t≈34s)이 정지 표적 상대로 발화했음).
+# TTC-STOP 경로 본격 검증은 Phase 4 고속 물체(자전거) 시나리오의 몫.
+# 안무: 느린 출발(로봇 주행 시작 t≈8.1s 대기) → 1.2 m/s 정면 접근(TTC-SLOW)
+#       → 완만 지속 접근(STOP 래치 하 위협 유지) → hold(정지선 밖).
 name: head_on
 actors:
   - name: ped_head_on
     loop: false
-    waypoints:            # [t, x, y, yaw] — x=4→10 후 그 자리에 정지
+    waypoints:            # [t, x, y, yaw]
       - [0, 4.0, 5.2, 0]
-      - [12, 10.0, 5.2, 0]
+      - [10, 6.0, 5.2, 0]      # 0.2 m/s
+      - [14.3, 11.16, 5.2, 0]  # 1.2 m/s 정면 접근 (TTC-SLOW 트리거 구간)
+      - [26, 11.6, 5.2, 0]     # 완만 접근 → hold (로봇 정지선 밖)
+                               # (STOP 시점 trial 편차 ±0.7s 대비 이동 종료
+                               #  t≈24.6 — require_stop_during 마진 ≥4s)
 launch_args:
   world_init_heading: "3.141593"
-cmd_profile: [[0.0, 0.3, 0.0]]
+cmd_profile: [[0.0, 0.5, 0.0]]
 settle_time: 8.0
-duration: 40.0
+duration: 25.0
 criteria:
   max_collisions: 0
   min_clearance_gt: 0.15
   require_states: [SLOW_DOWN, STOP]   # 접근 물체 게이트: TTC 반응 필수
   forbid_states: [ESTOP]
+  require_stop_during_actor_motion: true
+  min_travel_m: 1.5
