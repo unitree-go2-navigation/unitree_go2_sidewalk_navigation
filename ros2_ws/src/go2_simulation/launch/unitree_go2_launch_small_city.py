@@ -280,17 +280,26 @@ def generate_launch_description():
     )
 
     # safety_stop gate: teleop /cmd_vel → filter → /cmd_vel_safe → CHAMP
+    # 게이트 파라미터 override yaml (빈 문자열 = 없음). 기본 yaml 위에
+    # 겹쳐 로드 — 데모/실험용 임시 튜닝을 본 설정 파일 수정 없이 주입.
+    declare_safety_stop_extra = DeclareLaunchArgument(
+        "safety_stop_extra_params", default_value="",
+        description="Optional extra params YAML layered over safety_stop.yaml")
+    safety_stop_extra = LaunchConfiguration('safety_stop_extra_params')
+    safety_stop_params = [
+        safety_stop_yaml,
+        {'use_sim_time': use_sim_time,
+         'enable_gate': ParameterValue(
+             LaunchConfiguration('safety_gate'), value_type=bool)},
+    ]
     safety_stop_node = Node(
         package='perception_avoidance',
         executable='safety_stop_node',
         name='safety_stop_node',
         output='screen',
-        parameters=[
-            safety_stop_yaml,
-            {'use_sim_time': use_sim_time,
-             'enable_gate': ParameterValue(
-                 LaunchConfiguration('safety_gate'), value_type=bool)},
-        ],
+        parameters=safety_stop_params + [
+            PythonExpression(["'", safety_stop_extra, "' or '",
+                              safety_stop_yaml, "'"])],
         remappings=[
             ('/cmd_vel_in', '/cmd_vel'),       # subscribe to teleop output
             ('/cmd_vel_safety', '/cmd_vel_safe'),  # publish filtered to CHAMP input
@@ -307,7 +316,7 @@ def generate_launch_description():
         name="SDF_PATH",
         value=small_city_models_path,
     )
-    # Allow Gazebo to find the ActorPosePublisher system plugin built in this package
+    # Allow Gazebo to find custom ActorPosePublisher / WaypointMover plugins.
     go2_simulation_plugin_path = os.path.normpath(
         os.path.join(go2_simulation, "..", "..", "lib"))
     gazebo_plugin_path = AppendEnvironmentVariable(
@@ -366,6 +375,8 @@ def generate_launch_description():
 
             # RealSense D435i RGBD camera + IMU topics
             '/d435i/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            # 분리 RGB 이미저 (69°/720p, 데모 POV용 — xacro d435i_color 참조)
+            '/d435i/color/image@sensor_msgs/msg/Image[gz.msgs.Image',
             '/d435i/depth_image@sensor_msgs/msg/Image[gz.msgs.Image',
             '/d435i/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
             '/d435i/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
@@ -449,6 +460,7 @@ def generate_launch_description():
             declare_gazebo_world,
             declare_gui,
             declare_safety_gate,
+            declare_safety_stop_extra,
             declare_oracle_csv,
             declare_degrade_profile,
             declare_world_init_x,
