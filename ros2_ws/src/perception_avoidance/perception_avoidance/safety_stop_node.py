@@ -86,6 +86,14 @@ class SafetyStopNode(Node):
         # 최종 정지는 emergency_clearance 거리 백스톱(STOP)이 담당한다.
         self.declare_parameter('creep_v_min', 0.12)
         self.declare_parameter('stop_ttc', 1.0)
+        # 사각 소실 유지(blind-hold): 이보다 가까이 보이던 코리도 물체가 어떤
+        # 탐지로도 이어지지 않고 사라지면 lidar min range 사각 진입으로 간주,
+        # 마지막 관측 clearance를 유지한다. 없으면 WAIT가 "클리어"로 풀려
+        # RESUME이 사각을 향해 재진입→관통 (2026-07-13 head_on 충돌 2건:
+        # 초저속(<closing_eps) 접근 보행자가 사각 경계에서 깜빡임). 옆으로
+        # 비켜난 경우(코리도 밖 인근에서 계속 탐지)는 해제.
+        # min_range 0.8 − half_length 0.35 + margin 0.15 = 0.60.
+        self.declare_parameter('blind_hold_clearance', 0.60)
         # Min closing speed (m/s) to treat an obstacle as approaching
         self.declare_parameter('closing_eps', 0.05)
         # Let rotation (angular.z) pass through while SLOW/STOP so the robot can
@@ -133,6 +141,7 @@ class SafetyStopNode(Node):
         self.creep_overshoot = gp('creep_overshoot').value
         self.creep_v_min = gp('creep_v_min').value
         self.stop_ttc = gp('stop_ttc').value
+        self.blind_hold_clr = gp('blind_hold_clearance').value
         self.hyst_clr = gp('hysteresis_clearance').value
         self.hyst_ttc = gp('hysteresis_ttc').value
         self.persist_slow = gp('persistence_slow').value
@@ -176,6 +185,7 @@ class SafetyStopNode(Node):
         self.obs_stamp = None
         self.min_clearance = math.inf
         self.min_ttc = math.inf
+        self._blind_hold = None      # (front_x, clr) — 사각 소실 유지 중
         self._left_min = math.inf
         self._right_min = math.inf
         self.state = State.NOMINAL
@@ -215,6 +225,7 @@ class SafetyStopNode(Node):
         min_ttc = math.inf
         left_min = math.inf
         right_min = math.inf
+        min_hold = None
         for det in msg.detections:
             cx = det.bbox.center.position.x
             cy = det.bbox.center.position.y
@@ -243,8 +254,6 @@ class SafetyStopNode(Node):
             # Longitudinal clearance: distance from the nearest in-corridor
             # point to the robot's front body edge (footprint half-length).
             clr = corridor_front_x - self.robot_half_length
-            if clr < min_clr:
-                min_clr = clr
 
             # Relative velocity (base_link) embedded by lidar_obstacle_node in
             # covariance[0]=vx, covariance[1]=vy — travels atomically with the
@@ -256,6 +265,11 @@ class SafetyStopNode(Node):
             if det.results:
                 cov = det.results[0].pose.covariance
                 vx, vy = cov[0], cov[1]
+
+            if clr < min_clr:
+                min_clr = clr
+                # blind-hold용: 최근접 물체의 track id·횡위치·횡속도 기억
+                min_hold = {'clr': clr, 'id': det.id, 'cy': cy, 'vy': vy}
             pdist = math.hypot(cx, cy)
             closing = 0.0
             if pdist > 1e-3:
@@ -269,6 +283,45 @@ class SafetyStopNode(Node):
                 ttc = math.inf
             if ttc < min_ttc:
                 min_ttc = ttc
+        # 사각 소실 유지(blind-hold): 근접 코리도 물체가 어떤 탐지로도 이어지지
+        # 않고 사라짐 → 사각 진입으로 간주, 마지막 관측 clearance 유지 (in_stop
+        # 지속 → WAIT 해제 차단). 해제 = "위협 소멸의 적극적 증거"가 있을 때만:
+        #   ① 원거리 재관측 (clr > emergency+hyst — 깜빡임 대역 0.6~0.9의 실측
+        #      한 프레임으로 풀면 다음 소실 프레임에 RESUME 관통 재발, trial2)
+        #   ② 같은 track id가 코리도 밴드 밖으로 명백히 이탈 (정면에 걸친
+        #      실루엣 잔여 클러스터로 풀면 관통 재발, trial3 — id로 동일성 보장,
+        #      울타리 등 다른 물체의 측면 탐지로는 풀리지 않음)
+        #   ③ 예측 이탈(CVM): 마지막 횡속도가 코리도 이탈을 예측하면 예측
+        #      시각+1s 후 해제 — track 단절로 ②가 못 잡는 횡단 보행자의 동결
+        #      방지(liveness). 횡속도 없는 물체(정면/정지)는 영구 유지(safety).
+        if min_clr < math.inf:
+            if min_clr <= self.blind_hold_clr:
+                min_hold['t'] = self.obs_stamp
+                # 횡속도 기억 승계: track 단절 직후(새 track은 vy=0에서 EMA
+                # 재수렴)나 노이즈 프레임의 약한 추정이 마지막 갱신에 걸리면
+                # 예측 이탈(③)이 죽어 동결됨 (crossing 3/5 freeze 원인).
+                prev = self._blind_hold
+                if (prev is not None and abs(min_hold['vy']) < 0.05
+                        and abs(prev['vy']) >= 0.05):
+                    min_hold['vy'] = prev['vy']
+                self._blind_hold = min_hold
+            elif min_clr > self.emergency_clr + self.hyst_clr:
+                self._blind_hold = None
+        elif self._blind_hold is not None:
+            hold = self._blind_hold
+            aside = any(
+                d.id == hold['id']
+                and (abs(d.bbox.center.position.y) - 0.5 * d.bbox.size.y
+                     > self.corridor_half + 0.2)
+                for d in msg.detections)
+            t_exit = math.inf
+            if abs(hold['vy']) > 0.05:
+                t_exit = max(0.0, (self.corridor_half + 0.3 - abs(hold['cy']))
+                             / abs(hold['vy']))
+            if aside or (self.obs_stamp - hold['t']) > t_exit + 1.0:
+                self._blind_hold = None
+            else:
+                min_clr = hold['clr']
         self.min_clearance = min_clr
         self.min_ttc = min_ttc
         self._left_min = left_min
@@ -286,7 +339,10 @@ class SafetyStopNode(Node):
         slow_clr = self.slow_clr
         stop_ttc = self.stop_ttc
         slow_ttc = self.slow_ttc
-        if self.state == State.STOP:
+        # WAIT도 STOP과 같은 히스테리시스 유지: WAIT를 기본 임계로 판정하면
+        # 물체가 emergency 바로 위(0.6~0.9)에 있을 때 "클리어"로 풀려
+        # RESUME 돌진→재STOP 사이클로 마진을 갉아먹음 (2026-07-13 head_on).
+        if self.state in (State.STOP, State.WAIT):
             emergency_clr += self.hyst_clr
             slow_clr += self.hyst_clr
             stop_ttc += self.hyst_ttc

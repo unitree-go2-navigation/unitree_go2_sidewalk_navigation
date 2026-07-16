@@ -36,6 +36,13 @@ safety_stop_node:
     # 필요한 상황의 최종 정지는 emergency_clearance 백스톱이 담당.
     creep_v_min: 0.12
     stop_ttc: 1.0
+    # 사각 소실 유지(blind-hold): 이보다 가까이 보이던 코리도 물체가 어떤
+    # 탐지로도 이어지지 않고 사라지면 min range 사각 진입으로 간주, 마지막
+    # clearance를 유지 (WAIT 해제→RESUME 사각 재진입 관통 방지 — 2026-07-13
+    # head_on 충돌 2건: closing_eps 미만 초저속 접근 보행자가 사각 경계에서
+    # 깜빡임 → '클리어' 오판). 옆으로 비켜난 경우(코리도 밖 인근 탐지)는 해제.
+    # min_range 0.8 − half_length 0.35 + margin 0.15 = 0.60.
+    blind_hold_clearance: 0.60
 
     # Min closing speed (m/s) to treat an obstacle as approaching
     closing_eps: 0.05
