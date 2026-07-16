@@ -54,3 +54,6 @@ def test_static_ped_is_model_not_actor():
     assert '<model name="ped_s">' in xml
     assert '<static>true</static>' in xml
     assert '<actor' not in xml
+    # 사람 형태 visual (실린더 대체) + oracle actor_radius와 일치하는 충돌 실린더
+    assert 'MaleVisitorOnPhone/meshes/MaleVisitorStatic.obj' in xml
+    assert '<cylinder><radius>0.3</radius>' in xml

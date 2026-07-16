@@ -75,7 +75,7 @@ cmd_vel 흐름: `/cmd_vel` → safety_stop(게이트) → `/cmd_vel_safe` → CH
    (`verification/profiles/`) 하 축소 게이트(N≥3) 포함. 실제 L1의 희소·노이즈
    특성에서 파라미터가 깨지는지 그때그때 확인 — 종단에 몰지 않는다.
 
-⚠ **시나리오 월드 주의**: 정지 보행자는 actor가 아니라 static 실린더 모델로 표현
+⚠ **시나리오 월드 주의**: 정지 보행자는 actor가 아니라 static 사람 메시 모델로 표현
 (`worlds.py`의 `static: true`). **퇴화 actor 궤적(제자리/초저속 세그먼트)은 센서
 렌더링 활성 시 gz sim 스레드를 wedge**시킴 (2026-07-09 확인, 전 토픽/서비스
 무응답 + `SceneBroadcaster: Timed out waiting for state` 증상). 생성기가 거부하며

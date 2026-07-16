@@ -9,6 +9,8 @@ oracle CSV + 상태 로그를 수집해 임계와 비교, PASS/FAIL을 집계 CS
   python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml -n 1
   python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml \
       --degrade verification/profiles/real_l1.yaml -n 5
+  python3 verification/run_scenario.py -s verification/scenarios/head_on.yaml \
+      -n 1 --gui   # Gazebo GUI로 육안 확인 (판정 로직은 동일)
 
 수동 teleop 육안 확인은 통과 근거가 아니다 — 이 러너의 CSV가 근거다.
 """
@@ -50,7 +52,7 @@ def kill_gazebo_leftovers():
     time.sleep(1.0)
 
 
-def run_trial(scenario, trial_idx, degrade_profile, log):
+def run_trial(scenario, trial_idx, degrade_profile, log, gui=False):
     run_dir = os.path.join(
         RUNS_DIR, f"{scenario['name']}_{trial_idx}_{int(time.time())}")
     os.makedirs(run_dir, exist_ok=True)
@@ -62,7 +64,7 @@ def run_trial(scenario, trial_idx, degrade_profile, log):
 
     launch_cmd = [
         'ros2', 'launch', 'go2_simulation', 'unitree_go2_launch_small_city.py',
-        'gui:=false', 'rviz:=false',
+        f'gui:={"true" if gui else "false"}', 'rviz:=false',
         f'world:={world_path}',
         f'oracle_csv:={oracle_csv}',
     ]
@@ -133,6 +135,8 @@ def main():
     parser.add_argument('-n', '--trials', type=int, default=5)
     parser.add_argument('--degrade', default=None,
                         help='열화 프로파일 YAML (real_l1 등)')
+    parser.add_argument('--gui', action='store_true',
+                        help='Gazebo GUI 표시 (육안 확인용 — 판정은 동일)')
     parser.add_argument('--out', default=os.path.join(
         RUNS_DIR, '..', 'phase3_regression.csv'))
     args = parser.parse_args()
@@ -166,7 +170,8 @@ def main():
             total += 1
             print(f"[{scenario['name']} #{i+1}/{args.trials} degrade={tag}] "
                   f"running...", flush=True)
-            r = run_trial(scenario, i + 1, args.degrade, sys.stdout)
+            r = run_trial(scenario, i + 1, args.degrade, sys.stdout,
+                          gui=args.gui)
             status = 'PASS' if r['passed'] else 'FAIL'
             if not r['passed']:
                 failed += 1

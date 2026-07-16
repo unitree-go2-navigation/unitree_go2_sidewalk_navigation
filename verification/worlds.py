@@ -57,16 +57,18 @@ WAYPOINT_TEMPLATE = """          <waypoint>
 HOLD_DIST = 0.06      # m
 HOLD_DURATION = 9999  # s
 
-# 정지 보행자: 사람 크기 실린더 (r=0.3, h=1.7). 실린더 중심 z = 인도면(0.16)+0.85.
+# 정지 보행자: 서 있는 사람 메시 (MaleVisitorOnPhone, 키 1.74m, 발 = 메시 원점).
+# 라이다(GPU)는 visual을 보므로 사람 형태 그대로 감지된다. 충돌은 oracle의
+# actor_radius(0.3)와 일치하는 실린더 유지. 모델 pose z = 인도면(0.16).
 STATIC_PED_TEMPLATE = """    <model name="{name}">
       <static>true</static>
-      <pose>{x} {y} 1.01 0 0 0</pose>
+      <pose>{x} {y} 0.16 0 0 0</pose>
       <link name="body">
         <visual name="visual">
-          <geometry><cylinder><radius>0.3</radius><length>1.7</length></cylinder></geometry>
-          <material><ambient>0.2 0.7 0.2 1</ambient><diffuse>0.2 0.7 0.2 1</diffuse></material>
+          <geometry><mesh><uri>model://MaleVisitorOnPhone/meshes/MaleVisitorStatic.obj</uri></mesh></geometry>
         </visual>
         <collision name="collision">
+          <pose>0 0 0.85 0 0 0</pose>
           <geometry><cylinder><radius>0.3</radius><length>1.7</length></cylinder></geometry>
         </collision>
       </link>
