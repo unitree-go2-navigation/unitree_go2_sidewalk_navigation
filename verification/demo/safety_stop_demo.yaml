@@ -1,0 +1,17 @@
+# ⚠ 데모 영상 촬영 전용 게이트 override — 검증/회귀/실전에 절대 사용 금지.
+# 좁은 장애물 코스를 매끄럽게 통과하도록 반응을 공격적으로 완화한 값.
+# run_demo.py가 launch 인자(safety_stop_extra_params)로만 주입하므로
+# 본 설정(config/safety_stop.yaml)은 변경되지 않는다 — 원상복구 불필요.
+safety_stop_node:
+  ros__parameters:
+    slow_clearance: 1.2      # 3.0 → 코앞에서만 감속
+    slow_ttc: 1.5            # 3.0
+    stop_ttc: 0.6            # 1.0
+    emergency_clearance: 0.45  # 0.60
+    blind_hold_clearance: 0.45 # emergency와 정합
+    hysteresis_clearance: 0.15 # 0.30
+    hysteresis_ttc: 0.25     # 0.5
+    persistence_slow: 0.25   # 0.10 — 스침성 코리도 진입 무시
+    persistence_stop: 0.1    # 0.05
+    wait_clear_duration: 0.4 # 1.0 — 걸려도 빨리 재출발
+    resume_time: 0.8         # 1.5
