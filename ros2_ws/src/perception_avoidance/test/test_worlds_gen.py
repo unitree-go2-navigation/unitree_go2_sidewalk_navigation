@@ -43,6 +43,40 @@ def test_normal_trajectory_accepted():
     assert '<time>10011.0</time>' in xml        # 12 + HOLD_DURATION
 
 
+def test_bike_trajectory_uses_exported_glb_model():
+    spec = {'name': 'bike_head_on', 'loop': False,
+            'waypoints': [[0, -14.0, 5.2, 0], [8, -12.0, 5.2, 0]]}
+    xml = worlds.moving_bike_xml(spec)
+    assert '<model name="bike_head_on">' in xml
+    assert '<actor' not in xml
+    assert 'midday_ride/meshes/midday_ride_gazebo.glb' in xml
+    assert 'filename="WaypointMover"' in xml
+    assert '<z>0.16</z>' in xml
+    assert '<loop>false</loop>' in xml
+    assert '<waypoint>0 -14.0 5.2 0</waypoint>' in xml
+    # Y-up→Z-up으로 세우고 원본 -Y 전방을 시나리오 +X 진행축에 맞춘다.
+    assert '<pose>0 0 0 1.57079632679 0 1.57079632679</pose>' in xml
+
+
+def test_bike_scenario_tracks_model_in_oracle(tmp_path):
+    base = tmp_path / 'base.sdf'
+    out = tmp_path / 'world.sdf'
+    base.write_text('''<sdf version="1.10"><world name="default">
+    <plugin name="go2_simulation::ActorPosePublisher" filename="ActorPosePublisher">
+      <topic>/world/default/actor_pose/info</topic>
+    </plugin>
+    <actor name="placeholder"><script/></actor>
+</world></sdf>''')
+    spec = {'name': 'bike_pass', 'loop': False,
+            'waypoints': [[0, -14.0, 6.7, 0], [8, -12.0, 6.7, 0]]}
+    worlds.generate_world(
+        base, [spec], out, scenario_name='bike_pass')
+    xml = out.read_text()
+    assert '<actor' not in xml
+    assert '<model name="bike_pass">' in xml
+    assert '<model_name>bike_pass</model_name>' in xml
+
+
 def test_single_waypoint_rejected():
     spec = {'name': 'ped', 'waypoints': [[0, 4.0, 5.2, 0]]}
     with pytest.raises(ValueError, match='static'):

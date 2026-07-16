@@ -1,0 +1,43 @@
+# 정면 자전거 5 m/s (요구 B): 고속 물체 조기 STOP + CPA 통과까지 STOP 유지.
+# 자전거 표현은 midday_ride GLB + WaypointMover 모델을 5 m/s로 구동한다.
+# 물리 collision은 두지 않고 기존 actor처럼 oracle 거리로 충돌을 판정한다.
+# 검증 대상: ① STOP이 자전거 이동 중 + 원거리(clearance ≥2.0m)에서 발화
+#   (min_clearance_at_stop_gt), ② 자전거가 옆으로 비켜 통과(CPA)하기 전에는
+#   RESUME 금지 (require_no_resume_before_cpa), ③ 통과 후 재개·진행 (min_travel).
+# 안무: 원거리 대기(settle 동안 느린 출발) → 5 m/s 정면 접근 → x=8부터 완만
+#   사선으로 로봇을 스치듯 통과 (측면 간격 ~0.5m = 몸통폭 1.6배) → 후방 hold.
+#   로봇(0.5 명령, 실효 ~0.44)은 x=15에서 -x로 주행, 조기 STOP 후 통과 대기.
+# ⚠ waypoint는 균등 시간(1s)·균등 거리(5m) 간격 — 불균등 세그먼트는 스플라인
+#   재타이밍이 접합부마다 1~2m/s로 감속 + 사이에서 9~10m/s로 과속시킴 (실측,
+#   problem.md 2026-07-16). 감속 포켓이 통과 구간에 있으면 fast class(>2m/s)
+#   미달로 CPA-hold가 조기 해제 → RESUME-before-CPA (회귀 4/5 실패 원인).
+name: bike_head_on
+actors:
+  - name: bike_head_on
+    loop: false
+    waypoints:            # [t, x, y, yaw] — 1s 간격, 세그먼트당 5m
+      - [0, -14.0, 5.2, 0]
+      - [8, -12.0, 5.2, 0]       # 0.25 m/s 대기 롤 (settle 구간, 30m 밖)
+      - [9, -7.0, 5.2, 0]
+      - [10, -2.0, 5.2, 0]
+      - [11, 3.0, 5.2, 0]
+      - [12, 8.0, 5.2, 0]        # 여기까지 정면 접근 (조기 STOP 검증 구간)
+      - [13, 12.9, 6.25, 0.21]   # 완만 사선 5.01m — 로봇(x≈13.5) 앞에서 이탈 완료
+      - [14, 17.9, 6.25, 0]
+      - [14.82, 22.0, 6.25, 0]   # 후방 hold
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 25.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.3              # 근접 통과 간격 ≈0.5m 예상 (몸통폭 1.6배)
+  # SLOW 미요구: 5m/s 물체는 첫 안정 탐지(~12m, 센서 희소성 한계)에서 이미
+  # t_cpa≈2.2 → 3프레임 확인 후 STOP 대역. 점진 감속 검증은 head_on(보행자) 몫.
+  require_states: [STOP]
+  forbid_states: [ESTOP]
+  require_stop_during_actor_motion: true
+  min_clearance_at_stop_gt: 2.0      # 계획 명시 게이트: 조기 STOP
+  require_no_resume_before_cpa: true # CPA 통과 전 재출발 금지
+  min_travel_m: 5.0                  # 통과 후 재개 확인 (동결 시 ~1.4m)
