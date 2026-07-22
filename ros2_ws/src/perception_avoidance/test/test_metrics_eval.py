@@ -132,3 +132,56 @@ def test_no_resume_before_cpa_gate(tmp_path):
     driver['first_resume_t'] = None
     assert metrics.evaluate(
         oracle, driver, {'require_no_resume_before_cpa': True})[0]
+
+
+# --- P5 소셜 계측 -----------------------------------------------------------
+
+def test_pass_speed_gate(tmp_path):
+    # 사람 인접(clr<1.2) 구간에서 0.5m/s 이동 → 상한 0.35 위반
+    # (판정은 0.5s 창 평활 — oracle 샘플레이트 10Hz로 생성)
+    rows = [(round(k * 0.1, 1), 'ped', 1.0, 1.2,
+             15.0 - 0.05 * k, 5.2, 10.0, 5.2) for k in range(50)]
+    oracle = metrics.parse_oracle_csv(write_oracle(tmp_path, rows))
+    ok, fails = metrics.evaluate(
+        oracle, {'states': [], 'stop_entries': 0, 'travel': 5},
+        {'max_pass_speed_lt': 0.35})
+    assert not ok and 'pass speed' in fails[0]
+    ok, _ = metrics.evaluate(
+        oracle, {'states': [], 'stop_entries': 0, 'travel': 5},
+        {'max_pass_speed_lt': 0.6})
+    assert ok
+
+
+def test_lateral_shift_gate(tmp_path):
+    rows = [(t, 'ped', 3.0, 3.0, 15.0, 5.2 - 0.2 * t, 10.0, 5.2)
+            for t in range(5)]
+    oracle = metrics.parse_oracle_csv(write_oracle(tmp_path, rows))
+    ok, _ = metrics.evaluate(
+        oracle, {'states': []}, {'min_lateral_shift_m': 0.5})
+    assert ok
+    ok, fails = metrics.evaluate(
+        oracle, {'states': []}, {'min_lateral_shift_m': 1.5})
+    assert not ok and 'lateral shift' in fails[0]
+
+
+def test_band_stay_gate(tmp_path):
+    rows = [(0, 'ped', 3.0, 3.0, 15.0, 5.2, 10.0, 5.2),
+            (1, 'ped', 3.0, 3.0, 14.5, 6.9, 10.0, 5.2)]   # 밴드 밖
+    oracle = metrics.parse_oracle_csv(write_oracle(tmp_path, rows))
+    ok, fails = metrics.evaluate(
+        oracle, {'states': []}, {'robot_y_within': [3.85, 6.5]})
+    assert not ok and 'out of band' in fails[0]
+
+
+def test_yield_to_resume_gate(tmp_path):
+    driver = metrics.parse_states_csv(write_states(
+        tmp_path, [(10.0, 'YIELD_MOVE'), (12.0, 'YIELD_WAIT'),
+                   (16.0, 'RESUME'), (18.0, 'NOMINAL')]))
+    ok, _ = metrics.evaluate(
+        {'min_clearance': 9, 'collisions': 0, 'robot_series': []},
+        driver, {'max_yield_to_resume_s': 5.0})
+    assert ok
+    ok, fails = metrics.evaluate(
+        {'min_clearance': 9, 'collisions': 0, 'robot_series': []},
+        driver, {'max_yield_to_resume_s': 3.0})
+    assert not ok and 'yield→resume' in fails[0]

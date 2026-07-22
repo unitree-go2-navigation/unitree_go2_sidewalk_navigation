@@ -25,6 +25,7 @@ def parse_oracle_csv(path):
     collisions = 0
     tracks = {}                      # name → [(t, x, y), ...]
     clearance_series = []            # [(t, clearance), ...]
+    robot_series = []                # [(t, x, y)] (t당 1개 — P5 계측)
     cpa_t = None
     cpa_dist = float('inf')
     try:
@@ -47,6 +48,10 @@ def parse_oracle_csv(path):
                 if len(parts) >= 8:
                     tracks.setdefault(parts[1], []).append(
                         (float(parts[0]), float(parts[6]), float(parts[7])))
+                    t = float(parts[0])
+                    if not robot_series or robot_series[-1][0] != t:
+                        robot_series.append(
+                            (t, float(parts[4]), float(parts[5])))
     except FileNotFoundError:
         pass
     actor_motion_end = None
@@ -59,7 +64,8 @@ def parse_oracle_csv(path):
                 break
     return {'min_clearance': min_clearance, 'collisions': collisions,
             'actor_motion_end': actor_motion_end,
-            'clearance_series': clearance_series, 'cpa_t': cpa_t}
+            'clearance_series': clearance_series, 'cpa_t': cpa_t,
+            'robot_series': robot_series}
 
 
 def parse_states_csv(path):
@@ -72,6 +78,8 @@ def parse_states_csv(path):
     collision_events = 0
     first_stop_t = None
     first_resume_t = None
+    first_yield_wait_t = None
+    resume_after_yield_t = None
     with open(path) as f:
         f.readline()
         for line in f:
@@ -95,9 +103,16 @@ def parse_states_csv(path):
                 if (parts[1] == 'RESUME' and first_stop_t is not None
                         and first_resume_t is None):
                     first_resume_t = float(parts[0])
+                if parts[1] == 'YIELD_WAIT' and first_yield_wait_t is None:
+                    first_yield_wait_t = float(parts[0])
+                if (parts[1] == 'RESUME' and first_yield_wait_t is not None
+                        and resume_after_yield_t is None):
+                    resume_after_yield_t = float(parts[0])
     return {'states': states, 'stop_entries': stop_entries,
             'travel': travel, 'collision_events': collision_events,
-            'first_stop_t': first_stop_t, 'first_resume_t': first_resume_t}
+            'first_stop_t': first_stop_t, 'first_resume_t': first_resume_t,
+            'first_yield_wait_t': first_yield_wait_t,
+            'resume_after_yield_t': resume_after_yield_t}
 
 
 def evaluate(oracle, driver, criteria):
@@ -172,5 +187,66 @@ def evaluate(oracle, driver, criteria):
             failures.append(
                 f'STOP t={stop_t:.1f} not during actor motion '
                 f'(motion ended t={motion_end:.1f})')
+
+    # ── P5 소셜 계측 ─────────────────────────────────────────────────
+    robot = oracle.get('robot_series') or []
+
+    # 통과 속도 상한: 사람 인접(clearance < 1.2) 구간의 로봇 속도.
+    # 0.5s 창 평활 — 샘플 간(0.1s) 순간속도는 gait sway 첨두(±0.15)가 얹혀
+    # 명목(명령 캡 0.3)과 정합하지 않음 (스모크 실측 0.61 스파이크).
+    pass_v_lt = criteria.get('max_pass_speed_lt')
+    if pass_v_lt is not None:
+        series = oracle.get('clearance_series') or []
+        near = {round(t, 2) for t, c in series if c < 1.2}
+        worst = 0.0
+        j = 0
+        for i in range(len(robot)):
+            t1, x1, y1 = robot[i]
+            while robot[j][0] < t1 - 0.6:
+                j += 1
+            t0, x0, y0 = robot[j]
+            if t1 - t0 < 0.4:
+                continue
+            if round(t0, 2) in near or round(t1, 2) in near:
+                worst = max(worst, math.hypot(x1 - x0, y1 - y0) / (t1 - t0))
+        if not robot:
+            failures.append('no robot rows (max_pass_speed)')
+        elif worst >= pass_v_lt:
+            failures.append(f'pass speed {worst:.2f} >= {pass_v_lt}')
+
+    # 횡변위 하한: 회피/양보가 실제로 일어났는가
+    lat_shift = criteria.get('min_lateral_shift_m')
+    if lat_shift is not None:
+        if not robot:
+            failures.append('no robot rows (lateral_shift)')
+        else:
+            y0 = robot[0][2]
+            shift = max(abs(y - y0) for _, _, y in robot)
+            if shift < lat_shift:
+                failures.append(
+                    f'lateral shift {shift:.2f}m < {lat_shift}m')
+
+    # 밴드 이탈 금지: robot_y가 [min, max] 안 (polygon 이탈 0)
+    y_rng = criteria.get('robot_y_within')
+    if y_rng is not None and robot:
+        lo, hi = y_rng
+        worst_y = [y for _, _, y in robot if not (lo <= y <= hi)]
+        if worst_y:
+            failures.append(
+                f'robot_y out of band [{lo},{hi}]: {worst_y[0]:.2f} '
+                f'({len(worst_y)} rows)')
+
+    # YIELD 재개 시한: 대기 진입 → RESUME까지
+    y2r = criteria.get('max_yield_to_resume_s')
+    if y2r is not None:
+        yw = driver.get('first_yield_wait_t')
+        rs = driver.get('resume_after_yield_t')
+        if yw is None:
+            failures.append('no YIELD_WAIT entry (yield_to_resume)')
+        elif rs is None:
+            failures.append('no RESUME after YIELD_WAIT (yield_to_resume)')
+        elif rs - yw > y2r:
+            failures.append(
+                f'yield→resume {rs - yw:.1f}s > {y2r}s')
 
     return (len(failures) == 0), failures

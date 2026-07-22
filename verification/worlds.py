@@ -6,6 +6,7 @@
 actor / 이동 모델 명세:
   {name, waypoints: [[t, x, y, yaw], ...], loop: bool}          # 이동 보행자
   {name, static: true, x, y}                                    # 정지 보행자
+  {name, box: true, x, y, size: [sx, sy, sz]}                   # 정적 박스 (스퀴즈)
 
 시나리오 이름에 ``bike``가 포함되면 이동 개체를 skeletal actor 대신
 ``midday_ride`` GLB visual + WaypointMover 모델로 생성한다. 일반 보행자
@@ -106,6 +107,22 @@ STATIC_PED_TEMPLATE = """    <model name="{name}">
     </model>
 """
 
+BOX_TEMPLATE = """    <model name="{name}">
+      <static>true</static>
+      <pose>{x} {y} {z} 0 0 0</pose>
+      <link name="body">
+        <visual name="visual">
+          <geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
+          <material><ambient>0.6 0.45 0.3 1</ambient>
+            <diffuse>0.6 0.45 0.3 1</diffuse></material>
+        </visual>
+        <collision name="collision">
+          <geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
+        </collision>
+      </link>
+    </model>
+"""
+
 ACTOR_BLOCK_RE = re.compile(r'[ \t]*<actor\b.*?</actor>\n', re.DOTALL)
 
 MIN_SEGMENT_DIST = 0.05   # m
@@ -165,6 +182,14 @@ def static_ped_xml(spec):
         name=spec['name'], x=spec['x'], y=spec['y'])
 
 
+def box_xml(spec):
+    sx, sy, sz = spec.get('size', [0.4, 0.4, 1.0])
+    # 보도 상판(z=0.16) 위에 올려놓는다
+    return BOX_TEMPLATE.format(
+        name=spec['name'], x=spec['x'], y=spec['y'],
+        z=0.16 + 0.5 * sz, sx=sx, sy=sy, sz=sz)
+
+
 def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
@@ -176,7 +201,10 @@ def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     tracked_model_names = []
     is_bike_scenario = 'bike' in scenario_name.lower()
     for spec in actors:
-        if spec.get('static'):
+        if spec.get('box'):
+            insert += box_xml(spec)
+            tracked_model_names.append(spec['name'])
+        elif spec.get('static'):
             insert += static_ped_xml(spec)
             tracked_model_names.append(spec['name'])
         elif is_bike_scenario:

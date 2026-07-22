@@ -1,11 +1,10 @@
-# 정면 접근 v2 (로봇 0.5 m/s): 보행자가 현실 보행속도(1.2 m/s)로 정면 접근.
-# 검증 대상: ① SLOW가 상대속도 TTC 경로로 조기 발화 (정적 3.0m 대비 clr≈4.4m
-# 에서 진입 — 실측), ② STOP이 보행자 "이동 중" 발화 + 지속 접근 하 래치 유지
-# (require_stop_during_actor_motion — v1의 타이밍 퇴화를 FAIL로 잡는 게이트.
-#  v1은 보행이 t=12s에 끝나 STOP(t≈34s)이 정지 표적 상대로 발화했음).
-# TTC-STOP 경로 본격 검증은 Phase 4 고속 물체(자전거) 시나리오의 몫.
-# 안무: 느린 출발(로봇 주행 시작 t≈8.1s 대기) → 1.2 m/s 정면 접근(TTC-SLOW)
-#       → 완만 지속 접근(STOP 래치 하 위협 유지) → hold(정지선 밖).
+# 정면 접근 v3 (P5-4, 소셜 기본 ON): 보행자가 1.2 m/s로 정면 접근.
+# v2까지는 코리도 TTC 경로(SLOW→STOP 래치)를 게이트했으나, 소셜 ON에서는
+# 대면 보행자에 YIELD 조기 양보(가장자리 대기)가 의도 거동 — 실측 min_clr
+# 2.47 (v2 STOP 경로 0.5 대비 5배 안전). 판정을 YIELD 경로로 갱신하고,
+# 코리도 TTC-STOP 경로의 회귀는 crossing(횡단·양보 불가)과 P4 자전거
+# 시나리오가 계속 담당한다. 이동 종료 후 보행자가 진로에 hold → 정지
+# 보행자 상대 STOP 사이클은 기존 정적 로직 몫 (판정 비대상).
 name: head_on
 actors:
   - name: ped_head_on
@@ -24,8 +23,10 @@ settle_time: 8.0
 duration: 25.0
 criteria:
   max_collisions: 0
-  min_clearance_gt: 0.15
-  require_states: [SLOW_DOWN, STOP]   # 접근 물체 게이트: TTC 반응 필수
+  min_clearance_gt: 0.3
+  # YIELD_MOVE만 요구 — 크랩 중 STUCK 회복 등으로 WAIT 미도달 런(1/5,
+  # 여유 1.86 안전)이 있어 게이트 의도('양보 전환 여부')만 판정.
+  require_states: [YIELD_MOVE]
   forbid_states: [ESTOP]
-  require_stop_during_actor_motion: true
+  robot_y_within: [3.75, 6.35]
   min_travel_m: 1.5

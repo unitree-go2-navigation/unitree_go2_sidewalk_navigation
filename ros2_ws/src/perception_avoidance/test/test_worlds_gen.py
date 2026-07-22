@@ -91,3 +91,20 @@ def test_static_ped_is_model_not_actor():
     # 사람 형태 visual (실린더 대체) + oracle actor_radius와 일치하는 충돌 실린더
     assert 'MaleVisitorOnPhone/meshes/MaleVisitorStatic.obj' in xml
     assert '<cylinder><radius>0.3</radius>' in xml
+
+
+def test_box_obstacle_generated(tmp_path):
+    base = tmp_path / 'base.sdf'
+    out = tmp_path / 'w.sdf'
+    base.write_text("""<sdf version="1.10"><world name="default">
+    <plugin name="go2_simulation::ActorPosePublisher" filename="ActorPosePublisher">
+      <topic>/t</topic>
+    </plugin>
+</world></sdf>""")
+    worlds.generate_world(
+        base, [{'name': 'b1', 'box': True, 'x': 10.0, 'y': 4.9,
+                'size': [0.4, 0.5, 1.0]}], str(out), scenario_name='squeeze')
+    sdf = out.read_text()
+    assert '<box><size>0.4 0.5 1.0</size></box>' in sdf
+    assert '10.0 4.9 0.66' in sdf          # z = 0.16 + sz/2
+    assert 'b1' in sdf
