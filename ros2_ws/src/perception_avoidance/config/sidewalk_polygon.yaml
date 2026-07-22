@@ -1,0 +1,15 @@
+# sidewalk_polygon_node — small_city 시나리오 보도 밴드 (Phase 5a).
+# 좌표 근거: small_city.sdf sidewalk_16 collision box 52.6×3.0 @ (15, 5.2)
+# → x [-11.3, 41.3]. 이 스택의 /odom은 월드 좌표로 초기화되므로 (2026-07-22
+# 계측 확정) 스폰 오프셋 파라미터는 두지 않는다.
+# ⚠ polygon의 의미는 '주행 가능한 보도' (실기체 segmentation의 출력 대역) —
+# 충돌 박스 외곽이 아니다. 북측은 상가 전면부(월드 y≥6.5)가 보도를 점유
+# 하므로 6.35에서 끊는다 (외곽 6.7로 두면 게이트가 벽 앞 0.95m 협로를
+# 대등한 통과 후보로 오판 — 프로브 실측: 협로 커밋에 15s 낭비 후 반전).
+sidewalk_polygon_node:
+  ros__parameters:
+    polygon_x: [-11.3, 41.3, 41.3, -11.3]
+    polygon_y: [3.7, 3.7, 6.35, 6.35]
+    publish_rate: 10.0
+    odom_topic: /odom
+    output_topic: /perception/sidewalk/boundary

@@ -306,6 +306,21 @@ def generate_launch_description():
         ],
     )
 
+    # 보도 경계 polygon (Phase 5a) — 팀원 segmentation 계약의 시뮬 대역.
+    # /odom이 월드 좌표로 초기화되는 스택이라 스폰 인자 전달 불필요.
+    sidewalk_polygon_yaml = os.path.join(
+        perception_avoidance, 'config/sidewalk_polygon.yaml')
+    sidewalk_polygon_node = Node(
+        package='perception_avoidance',
+        executable='sidewalk_polygon_node',
+        name='sidewalk_polygon_node',
+        output='screen',
+        parameters=[
+            sidewalk_polygon_yaml,
+            {'use_sim_time': use_sim_time},
+        ],
+    )
+
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     gazebo_resource_path = AppendEnvironmentVariable(
@@ -508,5 +523,8 @@ def generate_launch_description():
             degrade_pointcloud_node,
             lidar_obstacle_node,
             safety_stop_node,
+
+            # Phase 5a: 보도 경계 polygon
+            sidewalk_polygon_node,
         ]
     )
