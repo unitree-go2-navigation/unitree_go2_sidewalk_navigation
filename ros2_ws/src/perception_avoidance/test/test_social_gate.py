@@ -236,6 +236,89 @@ def test_cut_in_lock_while_passing(snode):
         assert snode._social[0] < 0     # 사람 반대쪽(−)만 허용
 
 
+# --- 5b YIELD ---------------------------------------------------------------
+
+from perception_avoidance.safety_stop_node import (
+    State, YIELD_CLEAR_T, YIELD_EDGE_OFF, YIELD_REACH)
+
+
+def feed_oncoming(node, frames=10, y=0.0, band=0.6):
+    # 좁은 밴드(±band) + 정면 접근 보행자 (실제처럼 매 프레임 접근):
+    # 이동 승격 3 + 위치 접근 증거 5 + 트리거 3 프레임 소요
+    feed_poly(node, y_lo=-band, y_hi=band)
+    for i in range(frames):
+        feed(node, [make_det(4.6 - 0.15 * i, y, vx=-1.6, det_id='onc')])
+
+
+def test_yield_triggers_on_oncoming_nogap(snode):
+    feed_oncoming(snode)
+    assert snode._yield_req
+    assert snode._yield_side == -1.0            # 접근자 중앙(≥-0.1) → 우측
+    assert snode._yield_target == pytest.approx(-0.6 + YIELD_EDGE_OFF)
+
+
+def test_no_yield_when_gap_passable(snode):
+    # 넓은 밴드(±1.5): 측방 gap 1.2 ≥ moving_min → 통과 후보 존재 → YIELD 없음
+    feed_poly(snode)
+    for _ in range(7):
+        feed(snode, [make_det(3.5, 0.0, vx=-1.6, det_id='onc')])
+    assert not snode._yield_req
+
+
+def test_no_yield_for_static_person(snode):
+    # 정지 보행자 + nogap이어도 접근자가 아니면 YIELD 없음 (5a 영역)
+    feed_oncoming(snode, frames=0)
+    for _ in range(7):
+        feed(snode, [make_det(3.5, 0.0, det_id='sp')])
+    assert not snode._yield_req
+
+
+def test_yield_fsm_transitions(snode):
+    feed_oncoming(snode)
+    snode.state = State.NOMINAL
+    assert snode._next_state(False, False, True) == State.YIELD_MOVE
+    # 이동 중 도달 → 대기
+    snode.state = State.YIELD_MOVE
+    snode._yield_start = snode._last_tick
+    snode._yield_target = 0.05                  # < YIELD_REACH
+    assert snode._next_state(False, False, True) == State.YIELD_WAIT
+    # 대기 중 접근자 소멸 1s 지속 → RESUME
+    snode.state = State.YIELD_WAIT
+    snode._t_yield_clear = YIELD_CLEAR_T + 0.1
+    assert snode._next_state(False, False, True) == State.RESUME
+    # 이동 중 접근자 소멸 → NOMINAL 복귀
+    snode.state = State.YIELD_MOVE
+    snode._social_oncoming = None
+    snode._yield_target = 0.5
+    assert snode._next_state(False, False, True) == State.NOMINAL
+
+
+def test_yield_move_continues_through_stop(snode):
+    # YIELD_MOVE는 전진 0 + 측방 탈출 — in_stop에도 크랩 지속 (얼리면
+    # 접근자 차선 안 정지 → actor 관통, 프로브 실측). WAIT은 STOP 우선.
+    feed_oncoming(snode)
+    snode.state = State.YIELD_MOVE
+    snode._yield_start = snode._last_tick
+    snode._yield_target = 0.5
+    snode._t_in_stop_cond = 1.0
+    assert snode._next_state(True, True, False) == State.YIELD_MOVE
+    snode.state = State.YIELD_WAIT
+    assert snode._next_state(True, True, False) == State.STOP
+
+
+def test_yield_move_output(snode):
+    feed_oncoming(snode)
+    snode.state = State.NOMINAL
+    snode.cmd_in.linear.x = 0.5
+    captured = []
+    snode.cmd_out_pub.publish = lambda m: captured.append(m)
+    snode.tick()
+    assert snode.state == State.YIELD_MOVE
+    out = captured[-1]
+    assert out.linear.x <= 0.15 + 1e-6          # 감속 상한
+    assert out.linear.y < 0.0                   # 우측 가장자리로 크랩
+
+
 # --- blind-hold 지상 vy 보정 -------------------------------------------------
 
 def test_blind_hold_vy_ground_compensated(node):
