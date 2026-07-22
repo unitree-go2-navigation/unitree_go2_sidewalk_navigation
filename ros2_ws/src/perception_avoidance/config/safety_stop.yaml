@@ -83,17 +83,17 @@ safety_stop_node:
     # of deadlocking facing an obstacle). Forward/lateral/reverse stay gated.
     pass_rotation_when_blocked: true
 
-    # ── Phase 5a 소셜 레이어 (기본 OFF) ─────────────────────────────────
-    # ON이면 보도 polygon(/perception/sidewalk/boundary) 안에서 gap을 골라
-    # 횡방향(vy) 주입 + 사람 인접 통과 시 속도 캡. 판정 기준이 따라잡는
-    # 5a 4단계에서 시나리오와 함께 ON 예정 — 그 전까지 회귀는 OFF 기준.
+    # ── Phase 5 소셜 레이어 (P5-4에서 기본 ON 전환) ────────────────────
+    # 보도 polygon(/perception/sidewalk/boundary) 안에서 gap을 골라 횡방향
+    # (vy) 주입 + 사람 인접 통과 시 속도 캡 + 대면 보행자 YIELD 양보(5b).
+    # 소셜 시나리오 4종(social_*) + P3/P4 회귀가 이 상태로 게이트된다.
     # 계약 편차 메모: 계획 인터페이스 표의 'polygon timeout 시 정적 YAML
     # fallback' 소비자 층은 시뮬에서 생략 — 발행 노드(sidewalk_polygon_node)
     # 자체가 정적 YAML이라 이중화 무의미. 실기체 bringup(P8)에서 소비자
     # fallback 파라미터 추가 예정. timeout 시 거동: 소셜 비활성(STOP-only).
     # ⚠ override YAML로 켤 때 수치는 반드시 소수점 표기 (int면 rclpy 타입
     # 불일치로 노드 기동 실패).
-    social_enable: false
+    social_enable: true
     social_lookahead: 5.0   # blocker 전방 창 (m)
     social_person_v: 0.3    # 이동 판정 지상 속도 (회전보정 + 자기병진 보상 후)
     person_min_top: 0.5     # 사람 분류 상단 z (base_link; 지상 ~0.8m — 아동 포함)

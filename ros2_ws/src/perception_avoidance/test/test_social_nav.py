@@ -69,13 +69,12 @@ def test_moving_person_needs_1p2m():
 
 # --- classify_gap: 목표 배치 (정적 밀착 / 사람 여유 / 우측 편향) ------------
 
-def test_person_static_gap_hugs_static_side():
-    # 사람이 아래(-y), 정적이 위 — 정적 쪽 밀착으로 보행자 여유 최대화
+def test_person_static_gap_person_margin_floor():
+    # 좁은 사람|정적 gap: 정적 밀착(0.25) 한도와 사람 하드 여유(0.45) 중
+    # 사람 여유가 우선 — static_margin 0.25 상향 후 w=1.0에선 0.605 지점
     ok, target, _ = classify_gap(Gap(0.0, 1.0, 'person', 'static'), R)
     assert ok
-    assert target == pytest.approx(1.0 - R.static_margin - R.robot_width / 2)
-    person_clearance = target - R.robot_width / 2
-    assert person_clearance >= R.person_margin
+    assert target == pytest.approx(R.person_margin + R.robot_width / 2)
 
 
 def test_person_edge_gap_prioritizes_person_margin():
@@ -159,7 +158,11 @@ def test_band_partial_overlap_clipped():
 # --- classify_kind ----------------------------------------------------------
 
 def test_moving_track_is_person_moving():
-    assert classify_kind(True, True, False, True) == 'person_moving'
+    # 이동 + 키 큼 → person_moving. 낮은 이동 track(부트스트랩 스파이크)은
+    # person_moving 금지 (YIELD 오발 방어) — ever 이력으로 person까지만.
+    assert classify_kind(True, True, True, True) == 'person_moving'
+    assert classify_kind(True, True, False, True) == 'person'
+    assert classify_kind(True, False, False, True) == 'static'
 
 
 def test_stopped_walker_stays_person():

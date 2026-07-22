@@ -67,6 +67,15 @@ SOCIAL_HOLD_T = 3.0        # 측 래치·완화 유지 창 — 실측 nogap 스�
 # gap 계산에서 제외 — 속도·폭 추정이 전부 노이즈. 실물 소형 장애물의 충돌
 # 안전은 코리도 게이트가 계속 담당하고, 지면 장애물 대응은 Phase 6 몫.
 BLOCKER_MIN_DIM = 0.25
+# 직진 차선(코리도+여유)이 막혔을 때만 소셜 조향 — 밴드 가장자리 관목
+# person들이 상시 gap 목표를 만들면 로봇이 내내 크랩을 섞어 실효 전진이
+# 절반으로 떨어짐 (final 게이트 empty·bike_pass 이동 미달 실측). 필터는
+# 회피가 필요할 때만 개입한다.
+LANE_CLEAR_HALF = 0.435    # corridor_half 0.335 + 여유 0.1
+# 사람 blocker 최소 횡폭: 희소 클러스터(열화)가 사람 폭을 과소측정하면
+# 옆 gap을 과대평가해 얇은 통과 커밋 (static_stop l1 여유 0.103 실측).
+# 실제 사람 폭 사전지식으로 하한.
+PERSON_MIN_WIDTH = 0.5   # 0.4→0.5: 팔 포함 실폭 — 얇은 통과 꼬리(0.134) 방어
 # blind-hold 지상 vy 보정 하한: LP 잔여 sway(α=0.1이 2.5Hz를 ~0.32로만
 # 감쇠 → ±0.03~0.06)가 hold의 0.05 문턱(승계·예측 이탈)을 뒤집지 않도록
 # 명령성 크랩워크(LP ~0.17+)에서만 보정 발동 — social OFF 경로 결정적 불변
@@ -79,11 +88,19 @@ BAND_EMA_ALPHA = 0.4       # band 경계 평활 (요 sway 에지 진동 완화)
 # 에서 최대 -0.35까지 관측됨 (yield_probe 실측: RESUME 18s 불발) — 실제
 # 대면 보행자(-1.6)와의 분리대를 확보. 밴드 겹침 요구와 이중 방어.
 YIELD_APPROACH_VX = -0.5   # 접근 판정 상대 vx 상한
+# 양보 대상 속도 상한: fast-class(자전거·킥보드, ≥2m/s)는 양보가 아니라
+# P4 조기 STOP 몫 — 크랩(실효 0.1m/s)으로 4~5m/s를 상대하면 여유 0.14
+# 실측. 보행자 대역만 양보.
+YIELD_APPROACH_VX_MIN = -2.0
 # 위치 기반 접근 증거: 지상 보정 x 감소가 이 프레임 수 연속 — 속도 신호
 # (EMA·부트스트랩 스파이크)는 클러터 churn에서 신뢰 불가 (조기 YIELD 오발
 # → 측 반전 → 보행자 경로 횡단 충돌 2회 실측). 실보행자는 매 프레임
 # ~0.1m씩 단조 접근, churn track은 비단조 + 단명.
-YIELD_APP_FRAMES = 5
+# 3 (5→3): 리셋형 연속 카운트가 원거리 track id churn(~0.5s)과 경합 —
+# 5는 래치 자체가 확률적으로 불발 (yield 진단 trial: onc 0/3056프레임,
+# 무양보 → 코리도 정지 → actor 관통). 오발 방어는 kind·속도 대역·차선
+# 충돌·밴드 조건이 겹으로 담당.
+YIELD_APP_FRAMES = 3
 # 접근자 감시 전방 창 — blocker 창(social_lookahead 5m)과 분리. 가장자리
 # 이동(~1.2m / 0.2m/s ≈ 6s)에는 5m 경고(접근속도 1.35 → 3.5s)가 부족해
 # 이동 미완 상태로 코리도 STOP에 얼어붙고 보행자가 스침 (프로브 실측
@@ -95,6 +112,11 @@ YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15
 YIELD_REACH = 0.12         # 가장자리 도달 판정 오차 (m)
 YIELD_MOVE_TIMEOUT = 10.0  # 이동 시한 초과 → 그 자리 대기 (배회 방지 백스톱)
 YIELD_CLEAR_T = 1.0        # 접근자 소멸 지속 → RESUME
+# 대기 워치독: 정상 해제(통과 후 고스트 4s + clear 1s ≈ 5~6s)를 넘기는
+# 잔존 래치는 강제 해제 — 영구 대기 모드의 구조적 봉쇄 (재래치 3s 금지;
+# 실위협은 코리도/fast STOP이 계속 상위 방어).
+YIELD_WAIT_MAX = 8.0
+YIELD_RELATCH_BLOCK = 3.0
 YIELD_VX = 0.0             # 이동 중 전진 0 (순수 크랩 — CHAMP 실효 크랩이
                            # 명령의 ~50%(0.2→0.1 실측)라 접근 시간 확보가 관건)
 YIELD_VY = 0.25            # 크랩 명령 상한 = gait max_linear_velocity_y
@@ -103,6 +125,12 @@ YIELD_VY = 0.25            # 크랩 명령 상한 = gait max_linear_velocity_y
 # 0.1m/s로는 시간 내 미완 → 반쯤 비킨 채 대기 → 접근자가 로봇을 침
 # (actor는 회피하지 않음; min_clr -0.38 실측).
 YIELD_LANE_CLEAR = 0.76
+# 접근자 진입 자격의 차선 충돌 조건: 횡거리가 이보다 크면 평행 통과
+# (측방 1.5m 자전거 등) — 양보 불필요. 래치 유지에는 미적용 (통과 중
+# 횡이동으로 벗어나는 건 정상 해제 경로가 처리).
+YIELD_LANE_CONFLICT = 0.8
+SQUEEZE_HOLD_T = 2.0       # cand 소실 후 유지 (통과 중 소실 관용)
+SQUEEZE_V_MAX = 0.2        # 협대역 판정 허용 속도 상한 (크립 전용)
 RECENTER_T = 8.0           # 양보 종료 후 밴드 중앙 복귀 바이어스 지속 (s)
 RECENTER_DEADBAND = 0.15   # 중앙 근접 시 복귀 종료 — 가장자리 라인 직진으로
                            # 수목 지대에 갇히는 잔결함 방지 (프로브 실측)
@@ -227,11 +255,9 @@ class SafetyStopNode(Node):
         # turn away from a blocking obstacle instead of deadlocking facing it.
         self.declare_parameter('pass_rotation_when_blocked', True)
 
-        # Phase 5a 소셜 레이어 (기본 OFF — 판정 기준이 따라잡는 4단계에서
-        # 시나리오와 함께 ON). ON이면 보도 polygon 안에서 gap을 골라 횡방향
-        # (vy) 주입 + 사람 인접 통과 시 속도 캡. 대면·이동 보행자가 창 안에
-        # 있으면 이번 사이클 비활성 (기존 코리도/fast 로직 몫 — 5b YIELD 예정).
-        self.declare_parameter('social_enable', False)
+        # Phase 5 소셜 레이어 (P5-4에서 기본 ON): 보도 polygon 안 gap 선택
+        # → 횡방향(vy) 주입 + 사람 인접 속도 캡 + 대면 보행자 YIELD 양보(5b).
+        self.declare_parameter('social_enable', True)
         self.declare_parameter('social_lookahead', 5.0)   # blocker 전방 창 (m)
         self.declare_parameter('social_person_v', 0.3)    # 이동 판정 지상 속도 (m/s)
         self.declare_parameter('person_min_top', 0.5)     # 사람 분류 상단 z (base_link, 지상 ~0.8m)
@@ -370,6 +396,8 @@ class SafetyStopNode(Node):
         self._yield_target = 0.0     # 가장자리 대기 목표 (base y)
         self._yield_start = 0.0
         self._t_yield_clear = 0.0
+        self._yield_wait_start = 0.0
+        self._yield_block_until = 0.0
         self._recenter_until = None  # 양보 후 복귀 바이어스 만료 시각
         self._last_social_t = None   # 고스트 후방 전파용 직전 obs 시각
         self._social_rules = GapRules(
@@ -646,10 +674,9 @@ class SafetyStopNode(Node):
             # 위치 기반 접근 증거 (지상 보정: 자기 전진분 상쇄) — YIELD 자격
             if 'ax' in h:
                 dxg = (cx - h['ax']) + self._vx_lp * dt
-                if dxg < -0.05:
-                    h['app'] = min(h.get('app', 0) + 1, 10)
-                else:
-                    h['app'] = max(h.get('app', 0) - 1, 0)
+                # 리셋형 연속 카운트 — 감쇠형(-1)은 정지물 접근 40+프레임의
+                # 노이즈 랜덤워크로 문턱 도달 (narrow_gap_refuse YIELD 오발)
+                h['app'] = h.get('app', 0) + 1 if dxg < -0.05 else 0
             h['ax'] = cx
             compact = (sx <= self.fast_max_extent
                        and sy <= self.fast_max_extent)
@@ -716,18 +743,24 @@ class SafetyStopNode(Node):
                 cur = dict(m, id=prev['id'])
             else:
                 for tid2, m2 in self._social_mem.items():
+                    # 승계도 진입과 같은 강증거 속도 대역 — 로봇 정지 후
+                    # 클러터 노이즈(vx ≈ -0.3)가 갈아타면 YIELD_WAIT 영구
+                    # 대기 (final 게이트 RESUME 미진입 2/5 실측)
                     if (abs(m2['x'] - prev['x']) < 1.5
                             and abs(m2['y'] - prev['y']) < 1.0
-                            and m2.get('vx', 0.0) < -0.25
+                            and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
+                            < YIELD_APPROACH_VX
                             and _in_scope(m2)):
                         cur = dict(m2, id=tid2)
                         break
-        if cur is None:
+        if cur is None and now >= self._yield_block_until:
             for tid2, m2 in self._social_mem.items():
                 if (m2['kind'] == 'person_moving'
-                        and m2.get('vx', 0.0) < YIELD_APPROACH_VX
+                        and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
+                        < YIELD_APPROACH_VX
                         and self._person_hist.get(tid2, {}).get('app', 0)
                         >= YIELD_APP_FRAMES
+                        and abs(m2['y']) < YIELD_LANE_CONFLICT
                         and _in_scope(m2)):
                     cur = dict(m2, id=tid2)
                     break
@@ -738,9 +771,18 @@ class SafetyStopNode(Node):
         # (프로브 3회 실측: moving 래치로 레이어 상시 비활성). 이동체 대응은
         # classify_gap의 moving_min(1.2m) gap 규칙이 담당 — 진짜로 막으면
         # '통과 gap 없음'으로 자연 비활성, 충돌 안전은 코리도/fast 게이트 몫.
-        flat = [(m['x'], m['y'], m['sx'], m['sy'], m['kind'])
+        flat = [(m['x'], m['y'], m['sx'],
+                 max(m['sy'], PERSON_MIN_WIDTH)
+                 if m['kind'] in ('person', 'person_moving') else m['sy'],
+                 m['kind'])
                 for m in self._social_mem.values()
                 if max(m['sx'], m['sy']) >= BLOCKER_MIN_DIM]
+        near_front = min((m['x'] - 0.5 * m['sx']
+                          for m in self._social_mem.values()
+                          if m['x'] + 0.5 * m['sx'] > SOCIAL_X_MIN
+                          and m['x'] - 0.5 * m['sx'] < self.social_lookahead
+                          and max(m['sx'], m['sy']) >= BLOCKER_MIN_DIM),
+                         default=math.inf)
         blockers = blockers_from_detections(
             flat, SOCIAL_X_MIN, self.social_lookahead, BLOCKER_INFLATE)
         # 래치된 접근자가 blocker 창(5m) 밖(5~8m)이어도 gap 계산에 투영 —
@@ -753,6 +795,17 @@ class SafetyStopNode(Node):
             blockers.append(Blocker(
                 m['y'] - 0.5 * m['sy'] - BLOCKER_INFLATE,
                 m['y'] + 0.5 * m['sy'] + BLOCKER_INFLATE, 'person_moving'))
+        # 직진 차선이 비어 있으면 조향 불개입 — 단, 래치된 접근자의 가상
+        # blocker는 투영 '후'에 판정한다 (차선을 향해 오는 중 = 차선 유효
+        # 점유; 투영 전에 반환하면 양보 개시가 5m 창 진입까지 늦어 3m
+        # 앞 트리거 → 이동 0.33m → 충돌, 진단 런 실측).
+        if not any(b.y_min < LANE_CLEAR_HALF and b.y_max > -LANE_CLEAR_HALF
+                   for b in blockers):
+            self._social = None
+            self._social_reason = 'lane_clear'
+            self._social_side = 0.0
+            self._update_yield(False)
+            return
         if not blockers:
             self._social = None
             self._social_reason = 'noblock'
@@ -772,14 +825,13 @@ class SafetyStopNode(Node):
         # 남았으면 전진을 크립으로 강제 — 정렬 미완 상태의 틈 진입이 통과
         # 여유를 깎는 반복 결함 (프로브 실측 0.07~0.12). 스퀴즈 모드의
         # 진입 규칙과 동일 원리 (4단계에서 강화 예정).
-        near_front = min((m['x'] - 0.5 * m['sx']
-                          for m in self._social_mem.values()
-                          if m['x'] + 0.5 * m['sx'] > SOCIAL_X_MIN
-                          and m['x'] - 0.5 * m['sx'] < self.social_lookahead
-                          and max(m['sx'], m['sy']) >= BLOCKER_MIN_DIM),
-                         default=math.inf)
 
         def set_social(ty, cap):
+            # 사람 캡은 근접(2.5m)에서만 — 원거리 관목 person 오분류가 접근
+            # 내내 0.3을 걸면 전 시나리오 이동거리 ~30% 손실 (final 게이트
+            # empty 0/5·bike_pass 0/10 실측)
+            if cap is not None and near_front >= 2.5:
+                cap = None
             if abs(ty) > 0.2 and near_front < 2.0:
                 cap = (self.creep_v_min if cap is None
                        else min(cap, self.creep_v_min))
@@ -904,15 +956,23 @@ class SafetyStopNode(Node):
                 cands.append((abs(tgt) + penalty, sd, tgt))
             cands.sort()
             self._yield_side = cands[0][1]
-        # 목표: 접근자 차선 이탈 지점과 밴드 가장자리 중 가까운 쪽 (이동
-        # 최소화), 밴드 경계 이격은 항상 확보
+        # 목표: 접근자 차선 이탈 지점 (이동 최소화). 단 대기 지점이 다른
+        # 사람의 0.55m 이내면 그 사람 너머로 심화 — 사람 벽 옆 주차는 통과
+        # 보행자와 8cm 스침을 만든다 (social_yield 실측). 밴드 이격 클램프.
         oy = self._social_oncoming['y']
-        if self._yield_side < 0:
-            self._yield_target = max(self._band[0] + YIELD_EDGE_OFF,
-                                     oy - YIELD_LANE_CLEAR)
+        sd = self._yield_side
+        tgt = oy + sd * YIELD_LANE_CLEAR
+        for m in self._social_mem.values():
+            if (m['kind'] in ('person', 'person_moving')
+                    and 0.0 < m['x'] < YIELD_SCOPE_X
+                    and abs(m['y'] - tgt) < 0.55):
+                deeper = m['y'] + sd * (0.5 * m['sy'] + 0.6)
+                if abs(deeper) > abs(tgt):
+                    tgt = deeper
+        if sd < 0:
+            self._yield_target = max(self._band[0] + YIELD_EDGE_OFF, tgt)
         else:
-            self._yield_target = min(self._band[1] - YIELD_EDGE_OFF,
-                                     oy + YIELD_LANE_CLEAR)
+            self._yield_target = min(self._band[1] - YIELD_EDGE_OFF, tgt)
         self._yield_frames = min(self._yield_frames + 1, YIELD_TRIG_FRAMES)
         self._yield_req = self._yield_frames >= YIELD_TRIG_FRAMES
 
@@ -1032,6 +1092,11 @@ class SafetyStopNode(Node):
             # 원리로 위험을 줄이는 성분(크랩)은 지속. YIELD_WAIT은 STOP 우선.
             if s != State.YIELD_MOVE:
                 return State.STOP
+            # fast-class 위협(자전거 CPA·근접 접근)은 크랩으로 못 피함 —
+            # YIELD_MOVE 예외에서 제외하고 STOP 우선 (bike 4ms 여유 0.144 실측)
+            if (self.min_fast_tcpa <= self.fast_stop_ttc + self.hyst_ttc
+                    or self._fast_near):
+                return State.STOP
         if s == State.STOP:
             return State.WAIT                  # stop released → confirm clear
         if s == State.WAIT:
@@ -1055,6 +1120,12 @@ class SafetyStopNode(Node):
         if s == State.YIELD_WAIT:
             if self._t_yield_clear >= YIELD_CLEAR_T:
                 return State.RESUME        # 통과 확인 → 기존 램프 재사용
+            if self._last_tick - self._yield_wait_start > YIELD_WAIT_MAX:
+                # 워치독: 잔존 래치 강제 해제 (permanent-wait 봉쇄)
+                self._social_oncoming = None
+                self._yield_block_until = (self._last_tick
+                                           + YIELD_RELATCH_BLOCK)
+                return State.RESUME
             return State.YIELD_WAIT
         # NOMINAL / SLOW_DOWN
         if self.social_enable and self._yield_req:
@@ -1187,6 +1258,8 @@ class SafetyStopNode(Node):
             self._resume_scale = 0.0           # ramp restarts from standstill
         if new_state == State.YIELD_MOVE and prev != State.YIELD_MOVE:
             self._yield_start = now
+        if new_state == State.YIELD_WAIT and prev != State.YIELD_WAIT:
+            self._yield_wait_start = now
         if (prev in (State.YIELD_MOVE, State.YIELD_WAIT)
                 and new_state not in (State.YIELD_MOVE, State.YIELD_WAIT)):
             self._yield_side = 0.0         # 양보 종료 — 측 래치 해제
@@ -1260,6 +1333,10 @@ class SafetyStopNode(Node):
             f'stall={self._stall_timer:.1f}s att={self._recover_attempts}'
         )
         if self.social_enable:
+            if self._social_oncoming is not None:
+                m = self._social_oncoming
+                msg.data += (f' | onc={m["id"]}@({m["x"]:.1f},{m["y"]:.1f})'
+                             f'v{m.get("vx", 0.0):.1f}')
             if self._social is not None:
                 cap = self._social[1]
                 msg.data += (f' | soc={self._social[0]:+.2f}'

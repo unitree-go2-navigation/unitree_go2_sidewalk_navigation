@@ -70,6 +70,7 @@ def snode():
 # --- 기본 OFF 불활성 ---------------------------------------------------------
 
 def test_off_social_stays_none(node):
+    node.social_enable = False      # P5-4부터 기본 ON — OFF 경로 명시 검증
     feed_poly(node)
     feed(node, [make_det(2.5, 0.8)])
     assert node._social is None
@@ -85,8 +86,9 @@ def test_standing_person_right_pass_target(snode):
     assert snode._social is not None
     target, cap, _ = snode._social
     assert cap == pytest.approx(0.3)
-    # blocker [-0.25,0.25] (inflate 0.05) → target -(0.25+0.6+0.155)
-    assert target == pytest.approx(-1.005)
+    # blocker [-0.3,0.3] (min폭 0.5 + inflate) → comfort 지점이 edge 한도에
+    # 클립: -(1.5-0.3-0.155)
+    assert target == pytest.approx(-1.045)
 
 
 def test_no_polygon_disables(snode):
@@ -103,10 +105,9 @@ def test_band_not_containing_robot_disables(snode):
 
 
 def test_low_box_is_static_squeeze_no_cap(snode):
-    # 낮은 박스(top -0.2): static. 폭 1.0 gap이면 사람 규칙(0.45)이 아니라
-    # 정적 중앙 통과여야 하고, 충분히 넓으면 캡 없음
+    # 낮은 박스(top -0.2, 차선 걸침): static — 사람 캡 없이 넓은 쪽 회피
     feed_poly(snode)
-    feed(snode, [make_det(2.5, 1.2, cz=-0.4, sz=0.4)])
+    feed(snode, [make_det(2.5, 0.55, cz=-0.4, sz=0.4)])
     target, cap, _ = snode._social
     assert cap is None          # 정적만 관여 + 넓은 gap → 캡 없음
     assert target < 0           # 우측(넓은 쪽) 선택
@@ -122,12 +123,20 @@ def test_moving_person_blocks_via_gap_rule(snode):
 
 
 def test_moving_person_with_wide_gap_passable(snode):
-    # 이동 보행자라도 반대측에 1.2m 이상 gap이 있으면 레이어 유지
-    # (초소형 노이즈 track의 베토 래치가 레이어를 죽이던 회귀 방지)
+    # 차선을 걸친 이동 보행자라도 반대측에 1.2m 이상 gap이 있으면 레이어
+    # 유지 (초소형 노이즈 track의 베토 래치가 레이어를 죽이던 회귀 방지)
     feed_poly(snode)
     for _ in range(3):
-        feed(snode, [make_det(3.0, 0.9, vx=-1.0)])
+        feed(snode, [make_det(3.0, 0.5, vx=-1.0)])
     assert snode._social is not None
+
+
+def test_off_lane_blockers_no_steering(snode):
+    # 직진 차선이 비어 있으면 조향 불개입 — 가장자리 관목 person들이 상시
+    # 크랩을 만들어 실효 전진이 절반이 되던 회귀 방지 (final 게이트 실측)
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 1.2), make_det(3.5, -1.1)])
+    assert snode._social is None
 
 
 def test_ground_speed_compensation(snode):
@@ -265,6 +274,18 @@ def test_no_yield_when_gap_passable(snode):
     assert not snode._yield_req
 
 
+def test_no_yield_for_lateral_passer(snode):
+    # 측방 평행 통과(자전거 등): 고속 접근 + nogap이어도 차선 충돌이
+    # 아니면 양보 금지 (bike_pass false-yield 방어)
+    feed_poly(snode)
+    for i in range(10):
+        feed(snode, [make_det(6.0 - 0.5 * i, 1.2, sy=0.3, vx=-5.0,
+                              det_id='bike'),
+                     make_det(3.0, -0.5, det_id='p1'),   # 중앙 통과 불가
+                     make_det(3.0, 0.5, det_id='p2')])
+    assert not snode._yield_req
+
+
 def test_no_yield_for_static_person(snode):
     # 정지 보행자 + nogap이어도 접근자가 아니면 YIELD 없음 (5a 영역)
     feed_oncoming(snode, frames=0)
@@ -329,3 +350,4 @@ def test_blind_hold_vy_ground_compensated(node):
     feed(node, [make_det(0.8, 0.0, vy=0.2)])   # clr 0.25 ≤ blind_hold 0.6
     assert node._blind_hold is not None
     assert abs(node._blind_hold['vy']) < 0.05
+

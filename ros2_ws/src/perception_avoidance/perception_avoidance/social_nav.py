@@ -21,7 +21,7 @@ class GapRules:
     """gap 판단 파라미터. 기본값은 계획 v2 확정 수치."""
 
     def __init__(self, robot_width=0.31, attempt_min=0.8, default_min=1.0,
-                 moving_min=1.2, person_margin=0.45, static_margin=0.20,
+                 moving_min=1.2, person_margin=0.45, static_margin=0.25,
                  edge_margin=0.30, pass_speed_cap=0.3):
         self.robot_width = robot_width
         # 0.8 (설계검토, 0.7→0.8): 0.7 squeeze는 몸 측면이 코리도 게이트
@@ -30,8 +30,8 @@ class GapRules:
         self.default_min = default_min      # 정지 보행자 관여 gap 하한
         self.moving_min = moving_min        # 이동 보행자 관여 gap 하한
         self.person_margin = person_margin  # 사람 측면 여유 (단일 통과 시)
-        # 0.20 (설계검토, 0.10→0.20): 시스템 자신의 횡 불확실 예산
-        # (corridor_margin 0.18 = sway+로컬라이즈)보다 얇게 붙으면 안 됨.
+        # 0.25 (0.10→0.20→0.25): 시스템 자신의 횡 불확실 예산(0.18)+박스
+        # 클러스터 폭 과소측정 — 대각 박스 8.8cm 스침 실측 후 상향.
         self.static_margin = static_margin  # 정적 밀착 시 최소 여유
         # polygon 경계는 물리 미확인(연석/펜스 가능) + odom 드리프트 + 요 sway
         # 지렛대 오차를 흡수해야 하므로 정적 물체보다 보수적으로.
@@ -177,15 +177,16 @@ def classify_kind(moving_now, ever_moved, bbox_top_z, compact):
       울타리/벽은 가림 경계가 로봇과 함께 슬라이딩해 상대속도 ≈0, 지상
       속도 ≈ 로봇 속도의 유사 이동체로 보인다 (프로브 실측: moving 킬스위치
       영구 래치). P4 fast_max_extent와 동일 원리. 사람/자전거는 컴팩트.
-    - 현재 이동 중(지속 확인된 속도) → 'person_moving'
-    - 과거에 이동했던 track(멈춘 보행자) → 'person'
-    - 키 큰(top_z ≥ 문턱은 호출자 판정) 정지 클러스터 → 'person'
-      (사람/입간판 구분 불가 — 사람 취급이 마진만 늘리는 안전 방향)
-    - 그 외(낮은 박스) → 'static'
+    - 현재 이동 중 + 키 큼 → 'person_moving' (YIELD 대상은 사람 형상만 —
+      낮은 track의 부트스트랩 속도 스파이크가 person_moving이 되면 박스
+      상대 YIELD 오발, narrow_gap_refuse 실측)
+    - 과거에 이동했던 track(멈춘 보행자) 또는 키 큰 정지 클러스터 →
+      'person' (사람/입간판 구분 불가 — 사람 취급이 마진만 늘리는 안전 방향)
+    - 그 외(낮은 박스 — 이동 스파이크 포함) → 'static'
     """
     if not compact:
         return 'static'
-    if moving_now:
+    if moving_now and bbox_top_z:
         return 'person_moving'
     if ever_moved or bbox_top_z:
         return 'person'
