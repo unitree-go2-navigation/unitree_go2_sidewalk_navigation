@@ -1,0 +1,248 @@
+"""Phase 5a 소셜 레이어의 게이트 통합 테스트 (Gazebo 불필요).
+
+obs_cb→_update_social의 분류·고스트·gap 선택과 _apply_social의 주입
+규칙(스케일·의도 게이트·aliasing 금지)을 노드 콜백 직접 호출로 검증한다.
+설계검토(2026-07-21)에서 확정된 결함 모드가 각 테스트의 근거다.
+"""
+
+import math
+
+import pytest
+from geometry_msgs.msg import Point32, PolygonStamped, Twist
+from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
+
+from perception_avoidance.safety_stop_node import SafetyStopNode
+
+
+def make_det(cx, cy, sx=0.4, sy=0.4, vx=0.0, vy=0.0, det_id='t1',
+             cz=0.0, sz=1.0):
+    det = Detection3D()
+    det.bbox.center.position.x = float(cx)
+    det.bbox.center.position.y = float(cy)
+    det.bbox.center.position.z = float(cz)
+    det.bbox.size.x = float(sx)
+    det.bbox.size.y = float(sy)
+    det.bbox.size.z = float(sz)
+    hyp = ObjectHypothesisWithPose()
+    hyp.pose.covariance[0] = float(vx)
+    hyp.pose.covariance[1] = float(vy)
+    in_band = abs(cy) - 0.5 * sy <= 0.335
+    hyp.pose.covariance[2] = (cx - 0.5 * sx) if in_band else -1.0
+    det.results.append(hyp)
+    det.id = str(det_id)
+    return det
+
+
+def feed(node, dets, robot_vx=0.0):
+    # 정상 상태 가정: 저역통과 자기속도 = 순간 속도 (odom_cb 미호출 대체)
+    node.robot_vx = robot_vx
+    node._vx_lp = robot_vx
+    msg = Detection3DArray()
+    t = node.get_clock().now().nanoseconds * 1e-9
+    msg.header.stamp.sec = int(t)
+    msg.header.stamp.nanosec = int((t - int(t)) * 1e9)
+    msg.detections.extend(dets)
+    node.obs_cb(msg)
+
+
+def feed_poly(node, y_lo=-1.5, y_hi=1.5):
+    msg = PolygonStamped()
+    for x, y in [(-6.0, y_lo), (10.0, y_lo), (10.0, y_hi), (-6.0, y_hi)]:
+        msg.polygon.points.append(Point32(x=x, y=y, z=0.0))
+    node.poly_cb(msg)
+
+
+@pytest.fixture()
+def node():
+    n = SafetyStopNode()
+    yield n
+    n.destroy_node()
+
+
+@pytest.fixture()
+def snode():
+    n = SafetyStopNode()
+    n.social_enable = True
+    yield n
+    n.destroy_node()
+
+
+# --- 기본 OFF 불활성 ---------------------------------------------------------
+
+def test_off_social_stays_none(node):
+    feed_poly(node)
+    feed(node, [make_det(2.5, 0.8)])
+    assert node._social is None
+
+
+# --- 활성 조건 / 분류 --------------------------------------------------------
+
+def test_standing_person_right_pass_target(snode):
+    # 정지 보행자(키 1.0 → top 0.5 = person) 정면 — 우측 gap 선택,
+    # 최소 이탈: comfort(0.6)+반폭 지점 (edge 밀착보다 이탈이 작으면 우선)
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 0.0)])
+    assert snode._social is not None
+    target, cap, _ = snode._social
+    assert cap == pytest.approx(0.3)
+    # blocker [-0.25,0.25] (inflate 0.05) → target -(0.25+0.6+0.155)
+    assert target == pytest.approx(-1.005)
+
+
+def test_no_polygon_disables(snode):
+    feed(snode, [make_det(2.5, 0.0)])
+    assert snode._social is None
+
+
+def test_band_not_containing_robot_disables(snode):
+    # polygon 좌표계 오류(예: 무변환 월드 좌표)로 밴드가 로봇 y=0을 포함하지
+    # 않으면 소셜 비활성 — 보도 밖 목표 조향 차단 (2026-07-22 사고 가드)
+    feed_poly(snode, y_lo=3.7, y_hi=6.7)
+    feed(snode, [make_det(2.5, 4.5)])
+    assert snode._social is None
+
+
+def test_low_box_is_static_squeeze_no_cap(snode):
+    # 낮은 박스(top -0.2): static. 폭 1.0 gap이면 사람 규칙(0.45)이 아니라
+    # 정적 중앙 통과여야 하고, 충분히 넓으면 캡 없음
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 1.2, cz=-0.4, sz=0.4)])
+    target, cap, _ = snode._social
+    assert cap is None          # 정적만 관여 + 넓은 gap → 캡 없음
+    assert target < 0           # 우측(넓은 쪽) 선택
+
+
+def test_moving_person_blocks_via_gap_rule(snode):
+    # 지상 속도 1.0 m/s 보행자가 중앙 점유 — 베토가 아니라 gap 규칙으로
+    # 비활성: 양측 gap이 moving_min(1.2m) 미달 → 통과 gap 없음
+    feed_poly(snode, y_lo=-1.35, y_hi=1.35)
+    for _ in range(3):
+        feed(snode, [make_det(3.0, 0.0, vx=-1.0)])
+    assert snode._social is None
+
+
+def test_moving_person_with_wide_gap_passable(snode):
+    # 이동 보행자라도 반대측에 1.2m 이상 gap이 있으면 레이어 유지
+    # (초소형 노이즈 track의 베토 래치가 레이어를 죽이던 회귀 방지)
+    feed_poly(snode)
+    for _ in range(3):
+        feed(snode, [make_det(3.0, 0.9, vx=-1.0)])
+    assert snode._social is not None
+
+
+def test_ground_speed_compensation(snode):
+    # 로봇 0.44 주행 중 정지물의 상대속도는 -0.44 — 지상 속도 ≈0이므로
+    # 이동으로 승격되면 안 됨 (미보상이면 레이어 자기 비활성 — 설계검토)
+    feed_poly(snode)
+    for _ in range(5):
+        feed(snode, [make_det(2.5, 0.0, vx=-0.44)], robot_vx=0.44)
+    assert snode._social is not None
+
+
+def test_sliding_chunk_not_moving(snode):
+    # 가림 경계 슬라이딩 청크: 상대속도 ≈0 + 지상속도 ≈로봇속도 —
+    # 상대속도 하한(0.25) 미달로 이동 승격 금지 (킬스위치 래치 방지)
+    feed_poly(snode)
+    for _ in range(6):
+        feed(snode, [make_det(2.5, 0.0),                     # 정지 보행자
+                     make_det(4.0, 1.1, vx=0.0, vy=0.0,      # 슬라이딩 청크
+                              det_id='chunk', cz=0.2, sz=1.0)],
+             robot_vx=0.44)
+    assert snode._social is not None
+
+
+def test_ghost_persists_through_dropout(snode):
+    # 관측 소실 후에도 blocker가 고스트로 유지 → target 유지 (커트인 방지)
+    feed_poly(snode)
+    feed(snode, [make_det(1.2, 0.0)])
+    t0 = snode._social[0]
+    for _ in range(3):
+        feed(snode, [], robot_vx=0.4)      # 사람 소실 (사각 진입 가정)
+    assert snode._social is not None
+    assert snode._social[0] == pytest.approx(t0, abs=0.05)
+
+
+def test_ghost_dropped_when_passed(snode):
+    # 고스트가 로봇 후방으로 완전히 전파되면 제거 → 소셜 해제
+    feed_poly(snode)
+    feed(snode, [make_det(0.3, 0.0)])
+    assert snode._social is not None
+    # 0.4 m/s × 0.1s/프레임 → x 0.3 → -0.85(= -(0.35+0.3)-sx/2) 아래까지
+    prev_t = snode._last_social_t
+    for k in range(40):
+        snode._last_social_t = prev_t - 0.1   # dt=0.1 강제
+        feed(snode, [], robot_vx=0.4)
+        prev_t = snode._last_social_t
+        if snode._social is None:
+            break
+    assert snode._social is None
+
+
+# --- 주입 규칙 (_apply_social) ----------------------------------------------
+
+def _now(node):
+    return node.get_clock().now().nanoseconds * 1e-9
+
+
+def test_injection_scales_and_caps(snode):
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 0.0)])
+    snode.cmd_in.linear.x = 0.5
+    base = Twist()
+    base.linear.x = 0.5
+    out = snode._apply_social(base, 1.0, _now(snode))
+    assert out.linear.y == pytest.approx(-0.2)      # 클램프 (0.8×1.045 > 0.2)
+    assert out.linear.x == pytest.approx(0.3)       # 사람 인접 캡
+    half = snode._apply_social(base, 0.5, _now(snode))
+    assert half.linear.y == pytest.approx(-0.1)     # RESUME/SLOW 스케일 적용
+
+
+def test_injection_requires_forward_intent(snode):
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 0.0)])
+    snode.cmd_in.linear.x = 0.0                     # 조종 의도 없음
+    base = Twist()
+    out = snode._apply_social(base, 1.0, _now(snode))
+    assert out.linear.y == 0.0
+
+
+def test_injection_does_not_mutate_cmd_in(snode):
+    # 설계검토 blocker: cmd_in aliasing → vy 누적. 복사본에만 합성해야 함.
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 0.0)])
+    snode.cmd_in.linear.x = 0.5
+    for _ in range(5):
+        snode._apply_social(snode.cmd_in, 1.0, _now(snode))
+    assert snode.cmd_in.linear.y == 0.0
+
+
+def test_stale_social_no_injection(snode):
+    feed_poly(snode)
+    feed(snode, [make_det(2.5, 0.0)])
+    snode.cmd_in.linear.x = 0.5
+    base = Twist()
+    base.linear.x = 0.5
+    out = snode._apply_social(base, 1.0, _now(snode) + 1.0)  # 1s 경과 가정
+    assert out.linear.y == 0.0 and out.linear.x == pytest.approx(0.5)
+
+
+def test_cut_in_lock_while_passing(snode):
+    # 사람이 몸 옆(x 0.5, y +0.7)을 지나는 중 — 전방에 새 blocker가 생겨도
+    # 사람 쪽(+)으로 향하는 목표는 금지 (통과 중 커트인 → min_clr 0.08 실측)
+    feed_poly(snode)
+    feed(snode, [make_det(0.5, 0.7, det_id='ped'),
+                 make_det(3.0, -0.9, det_id='box', cz=-0.4, sz=0.4)])
+    if snode._social is not None:
+        assert snode._social[0] < 0     # 사람 반대쪽(−)만 허용
+
+
+# --- blind-hold 지상 vy 보정 -------------------------------------------------
+
+def test_blind_hold_vy_ground_compensated(node):
+    # 크랩워크(vy_lp -0.2) 중 정지 보행자(상대 vy +0.2)가 hold에 래치되면
+    # 지상 vy ≈ 0으로 저장되어야 예측 이탈 ③이 오발하지 않는다 (설계검토
+    # FSM-1: 오염 시 hold 조기 해제 → RESUME 사각 관통 재발)
+    node._vy_lp = -0.2
+    feed(node, [make_det(0.8, 0.0, vy=0.2)])   # clr 0.25 ≤ blind_hold 0.6
+    assert node._blind_hold is not None
+    assert abs(node._blind_hold['vy']) < 0.05
