@@ -40,7 +40,7 @@ controller_server:
       ax_min: -0.5
       ay_max: 0.4
       az_max: 1.0
-      vx_std: 0.15
+      vx_std: 0.25
       vy_std: 0.1
       wz_std: 0.3
       vx_max: 0.5
@@ -82,7 +82,7 @@ controller_server:
       CostCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 3.81
+        cost_weight: 3.0
         critical_cost: 300.0
         consider_footprint: true
         collision_cost: 1000000.0
@@ -90,7 +90,7 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 14.0
+        cost_weight: 10.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
         threshold_to_consider: 0.5
@@ -138,8 +138,11 @@ local_costmap:
           obstacle_max_range: 6.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # 0.35/5.0 (0.55/3.0→): 보도 실폭 2.65m에서 0.55 팽창은 주행대
+        # 전체를 고비용으로 덮어 MPPI가 상시 감속 (관찰: cmd 중앙값 0.14,
+        # RViz 코스트맵 대부분 고비용 — 사용자 보고 #2)
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 global_costmap:
@@ -170,8 +173,8 @@ global_costmap:
           obstacle_max_range: 8.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 planner_server:

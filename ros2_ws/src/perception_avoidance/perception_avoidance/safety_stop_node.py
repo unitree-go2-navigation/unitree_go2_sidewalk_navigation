@@ -107,6 +107,10 @@ YIELD_APP_FRAMES = 3
 # min_clr -0.09). 10m면 병합·재래치 지연을 흡수하고도 ~7s 확보. blocker
 # 창 확장은 원거리 클러터가 1-D gap 계산을 오염시키므로 접근자 창만.
 YIELD_SCOPE_X = 10.0
+# nav 모드 강제 양보 발동 창: 래치는 10m부터 하되 실제 양보 개시는 이
+# 거리부터 — 원거리 접근자에게까지 즉시 정지·대기하는 과잉 (관찰 실측:
+# 8.1m 래치 → 30초 제자리, 사용자 보고 #1)
+YIELD_ENGAGE_X = 6.0
 YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 방어)
 YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15 + 반폭)
 YIELD_REACH = 0.12         # 가장자리 도달 판정 오차 (m)
@@ -944,7 +948,8 @@ class SafetyStopNode(Node):
         코리도 STOP이 로봇을 차선 안에 동결시켜 비회피 액터가 관통
         (nav 검증 실측: 횡 이탈 0, clr -0.53).
         """
-        if not self.social_steering and self._social_oncoming is not None:
+        if (not self.social_steering and self._social_oncoming is not None
+                and self._social_oncoming['x'] < YIELD_ENGAGE_X):
             no_gap = True
         if self._social_oncoming is None:
             self._yield_frames = 0
@@ -1117,10 +1122,10 @@ class SafetyStopNode(Node):
             # 원리로 위험을 줄이는 성분(크랩)은 지속. YIELD_WAIT은 STOP 우선.
             if s != State.YIELD_MOVE:
                 return State.STOP
-            # fast-class 위협(자전거 CPA·근접 접근)은 크랩으로 못 피함 —
-            # YIELD_MOVE 예외에서 제외하고 STOP 우선 (bike 4ms 여유 0.144 실측)
-            if (self.min_fast_tcpa <= self.fast_stop_ttc + self.hyst_ttc
-                    or self._fast_near):
+            # fast-class 임박 위협만 STOP 우선 — fast_near·완충 tcpa까지
+            # 포함하면 대각 회전의 유령 속도(트래커 지연 vs 즉시 보정)가
+            # 탈출을 동결시킴 (관찰 실측: MOVE→STOP 다수, 횡 이동 0)
+            if self.min_fast_tcpa <= 1.2:
                 return State.STOP
         if s == State.STOP:
             return State.WAIT                  # stop released → confirm clear
