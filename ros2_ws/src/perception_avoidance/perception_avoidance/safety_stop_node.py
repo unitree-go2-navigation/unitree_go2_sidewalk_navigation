@@ -120,6 +120,18 @@ YIELD_RELATCH_BLOCK = 3.0
 YIELD_VX = 0.0             # 이동 중 전진 0 (순수 크랩 — CHAMP 실효 크랩이
                            # 명령의 ~50%(0.2→0.1 실측)라 접근 시간 확보가 관건)
 YIELD_VY = 0.25            # 크랩 명령 상한 = gait max_linear_velocity_y
+# Nav2 모드 대각 탈출: 순수 크랩(실효 ~0.1m/s)은 근거리 조우(경고 <9m)에서
+# 물리적으로 이탈 불가 (GUI 실측: 0.26m 이동 후 관통). 회피 측으로 회전하며
+# 전진하면 횡 성분 ~0.2-0.3 — 2~3배. 방향 복구는 통과 후 Nav2 재계획 몫이라
+# nav 모드(social_steering=false)에서만 사용; 러너 모드는 방향 유지가 필요해
+# 순수 크랩 유지.
+# 0.22 (0.45→0.22): 회전 중 fast 보정(vy + wz·cx)은 즉시 wz를 쓰는데
+# 트래커 측정은 지연 → 스코프 8m 기준 유령 속도 wz×8이 fast 문턱(2.0)을
+# 넘으면 자기 회전이 fast STOP을 오발 (원거리 검증 -0.24 관통 실측).
+# 0.22×8=1.76 < 2.0 마진.
+YIELD_DIAG_WZ = 0.22
+YIELD_DIAG_VX = 0.22
+YIELD_DIAG_MIN_ERR = 0.3   # 잔여 이탈이 이보다 크면 대각, 작으면 크랩 마무리
 # 양보 목표 = 접근자 차선 이탈 지점: 접근자 반폭 0.3 + 여유 0.3 + 로봇 반폭
 # 0.155 ≈ 0.76. 밴드 가장자리(최대 1.2m)까지 가는 건 과잉 — 실효 크랩
 # 0.1m/s로는 시간 내 미완 → 반쯤 비킨 채 대기 → 접근자가 로봇을 침
@@ -926,7 +938,14 @@ class SafetyStopNode(Node):
         트리거: 접근 중 대면 이동 보행자 + no_gap + 밴드 유효가
         YIELD_TRIG_FRAMES 지속. 양보 측은 접근자 반대쪽으로 최초 1회 래치
         (애매하면 우측), 목표는 밴드 갱신을 따라 매 프레임 재계산.
+
+        nav 모드(social_steering OFF): 접근자 래치 시 gap 유무 무관 양보 —
+        gap이 '통과 가능'해도 주입이 꺼져 있어 실행 주체가 없고, 그 사이
+        코리도 STOP이 로봇을 차선 안에 동결시켜 비회피 액터가 관통
+        (nav 검증 실측: 횡 이탈 0, clr -0.53).
         """
+        if not self.social_steering and self._social_oncoming is not None:
+            no_gap = True
         if self._social_oncoming is None:
             self._yield_frames = 0
             self._yield_req = False
@@ -1296,19 +1315,25 @@ class SafetyStopNode(Node):
                 out = self._apply_social(out, s, now)
             self._publish_cmd(out)
         elif self.state == State.YIELD_MOVE:
-            # 능동 명령 상태 (STUCK과 같은 예외): 가장자리로 감속·크랩 이동.
+            # 능동 명령 상태 (STUCK과 같은 예외): 가장자리로 이동.
             # 코리도/fast의 in_stop은 _next_state에서 이미 우선 처리됨.
             out = Twist()
-            out.linear.x = min(max(self.cmd_in.linear.x, 0.0), YIELD_VX)
-            if abs(self._yield_target) >= LAT_DEADBAND:
-                # 하한 0.15: 비례 감속으로 초저속 크랩이 되면 실효 이동이
-                # 정체 감지 문턱 밑으로 떨어져 STUCK 오발 (프로브 실측 —
-                # 도달 판정은 reach가 담당하므로 감속 불필요)
-                mag = max(0.15, min(YIELD_VY,
-                                    self.lat_k * abs(self._yield_target)))
-                out.linear.y = math.copysign(mag, self._yield_target)
-            if self.pass_rotation:
-                out.angular.z = self.cmd_in.angular.z
+            err = self._yield_target
+            if (not self.social_steering
+                    and abs(err) > YIELD_DIAG_MIN_ERR):
+                # nav 모드 대각 탈출: 회피 측으로 회전 + 전진 + 크랩 동시
+                out.linear.x = YIELD_DIAG_VX
+                out.angular.z = math.copysign(YIELD_DIAG_WZ, err)
+                out.linear.y = math.copysign(YIELD_VY, err)
+            else:
+                out.linear.x = min(max(self.cmd_in.linear.x, 0.0), YIELD_VX)
+                if abs(err) >= LAT_DEADBAND:
+                    # 하한 0.15: 비례 감속 초저속 크랩은 STUCK 오발
+                    # (도달 판정은 reach가 담당)
+                    mag = max(0.15, min(YIELD_VY, self.lat_k * abs(err)))
+                    out.linear.y = math.copysign(mag, err)
+                if self.pass_rotation:
+                    out.angular.z = self.cmd_in.angular.z
             self._publish_cmd(out)
         else:  # STOP / WAIT / YIELD_WAIT — block translation, allow rotation to turn away
             out = Twist()
