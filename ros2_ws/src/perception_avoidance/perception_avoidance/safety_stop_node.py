@@ -258,6 +258,10 @@ class SafetyStopNode(Node):
         # Phase 5 소셜 레이어 (P5-4에서 기본 ON): 보도 polygon 안 gap 선택
         # → 횡방향(vy) 주입 + 사람 인접 속도 캡 + 대면 보행자 YIELD 양보(5b).
         self.declare_parameter('social_enable', True)
+        # 조향 주입(vy·캡·복귀)만 별도 스위치 — Nav2 모드에서는 인지+YIELD
+        # 상태기계는 유지하되 주입을 꺼서 플래너와의 횡제어 충돌을 차단.
+        # YIELD_MOVE/WAIT는 출력 인수형이라 주입과 무관하게 동작.
+        self.declare_parameter('social_steering', True)
         self.declare_parameter('social_lookahead', 5.0)   # blocker 전방 창 (m)
         self.declare_parameter('social_person_v', 0.3)    # 이동 판정 지상 속도 (m/s)
         self.declare_parameter('person_min_top', 0.5)     # 사람 분류 상단 z (base_link, 지상 ~0.8m)
@@ -328,6 +332,7 @@ class SafetyStopNode(Node):
         self.fast_max_extent = gp('fast_max_extent').value
         self.pass_rotation = gp('pass_rotation_when_blocked').value
         self.social_enable = gp('social_enable').value
+        self.social_steering = gp('social_steering').value
         self.social_lookahead = gp('social_lookahead').value
         self.social_person_v = gp('social_person_v').value
         self.person_min_top = gp('person_min_top').value
@@ -995,7 +1000,8 @@ class SafetyStopNode(Node):
                 target_y = mid
             else:
                 self._recenter_until = None
-        if target_y is None or self.cmd_in.linear.x <= self.stuck_v_min:
+        if (target_y is None or not self.social_steering
+                or self.cmd_in.linear.x <= self.stuck_v_min):
             return out
         o = Twist()
         o.linear.x = out.linear.x

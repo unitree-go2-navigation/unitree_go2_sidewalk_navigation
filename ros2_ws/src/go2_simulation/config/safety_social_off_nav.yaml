@@ -1,8 +1,9 @@
-# Nav2 런치 전용 override: 소셜 레이어 OFF.
-# 계층 원칙 — 플래너(MPPI, footprint 회피)가 횡제어를 소유할 때 소셜
-# 레이어까지 켜면 두 횡제어기가 충돌 (스모크 실측: YIELD/STOP 반복,
-# 밴드 가장자리 표류). 게이트는 안전 본연(STOP/SLOW/fast-class/blind-hold)
-# 역할만. teleop/직진 러너 경로에서는 소셜 ON 유지.
+# Nav2 런치 전용 override (v2): 인지+YIELD 상태기계는 유지, 조향 주입만
+# OFF. v1(전체 OFF)에서는 대면 보행자에 양보가 없어 코스트맵의 정지 세계
+# 가정(속도 미인지)만으로 대응 — 정면 접근에서 게이트 STOP만 남는 문제.
+# YIELD_MOVE/WAIT는 STUCK처럼 출력 인수형이라 Nav2 명령과 충돌하지 않고,
+# 통과 후 RESUME되면 Nav2가 새 위치에서 재계획한다.
 safety_stop_node:
   ros__parameters:
-    social_enable: false
+    social_enable: true
+    social_steering: false

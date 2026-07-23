@@ -351,3 +351,15 @@ def test_blind_hold_vy_ground_compensated(node):
     assert node._blind_hold is not None
     assert abs(node._blind_hold['vy']) < 0.05
 
+
+
+def test_steering_off_keeps_yield(snode):
+    # Nav2 모드(v2): social_steering=false — vy 주입은 죽고 YIELD 요구는 산다
+    snode.social_steering = False
+    feed_oncoming(snode)
+    assert snode._yield_req                      # 양보 상태기계 유지
+    snode.cmd_in.linear.x = 0.5
+    base = Twist()
+    base.linear.x = 0.5
+    out = snode._apply_social(base, 1.0, _now(snode))
+    assert out.linear.y == 0.0                   # 조향 주입 차단

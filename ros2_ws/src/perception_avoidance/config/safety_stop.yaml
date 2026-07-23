@@ -94,6 +94,7 @@ safety_stop_node:
     # ⚠ override YAML로 켤 때 수치는 반드시 소수점 표기 (int면 rclpy 타입
     # 불일치로 노드 기동 실패).
     social_enable: true
+    social_steering: true   # Nav2 런치는 override로 false (플래너가 횡제어 소유)
     social_lookahead: 5.0   # blocker 전방 창 (m)
     social_person_v: 0.3    # 이동 판정 지상 속도 (회전보정 + 자기병진 보상 후)
     person_min_top: 0.5     # 사람 분류 상단 z (base_link; 지상 ~0.8m — 아동 포함)
