@@ -14,6 +14,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -32,11 +33,22 @@ def generate_launch_description():
             'oracle_csv': LaunchConfiguration('oracle_csv'),
             'world_init_heading': LaunchConfiguration('world_init_heading'),
             'degrade_profile': LaunchConfiguration('degrade_profile'),
+            'cameras_enabled': LaunchConfiguration('cameras_enabled'),
             # Nav2가 횡제어 소유 → 소셜 레이어 OFF (두 횡제어기 충돌 방지;
             # 게이트는 안전 본연 역할 유지)
             'safety_stop_extra_params': os.path.join(
                 pkg, 'config', 'safety_social_off_nav.yaml'),
         }.items())
+
+    # gui:=true면 Nav2 디스플레이(costmap·경로·footprint·보도 밴드) 포함
+    # 전용 RViz도 함께 (base 런치의 rviz 인자와 별개 — 이중 실행 방지 위해
+    # base에는 rviz false 유지)
+    nav_rviz = Node(
+        package='rviz2', executable='rviz2', name='nav2_rviz',
+        condition=IfCondition(LaunchConfiguration('gui')),
+        arguments=['-d', os.path.join(pkg, 'rviz', 'nav2.rviz')],
+        parameters=[{'use_sim_time': True}],
+        output='screen')
 
     # map→odom 정적 TF는 base 런치에 이미 있음. 여기서는 odom→base_footprint
     # 를 /odom에서 중계 (Nav2의 TF 체인 요구 — 기존 파이프라인은 토픽 기반이라
@@ -92,12 +104,19 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='true'),
         DeclareLaunchArgument('gui', default_value='false'),
         DeclareLaunchArgument('rviz', default_value='false'),
+        # 기본 = 축소판(sidewalk_16 인접만) — 가벼운 반복 실험용.
+        # small_city(원본)는 최종 회피 알고리즘 완성 시 실기체 전이 전
+        # 테스트에 사용 (world:=.../small_city.sdf 로 전환; 앞당김 가능).
         DeclareLaunchArgument('world', default_value=os.path.join(
-            pkg, 'worlds', 'small_city.sdf')),
+            pkg, 'worlds', 'small_city_test.sdf')),
         DeclareLaunchArgument('oracle_csv', default_value='/tmp/oracle.csv'),
         DeclareLaunchArgument('world_init_heading', default_value='3.141593'),
         DeclareLaunchArgument('degrade_profile', default_value=''),
+        # nav 기본 OFF: 카메라 렌더가 L1을 기아 상태로 만듦 (RTF 1.0에서
+        # 10Hz→2.7Hz 실측). 데모 POV 필요 시 cameras_enabled:=true
+        DeclareLaunchArgument('cameras_enabled', default_value='false'),
         base,
+        nav_rviz,
         odom_tf,
         map_server,
         map_lifecycle,

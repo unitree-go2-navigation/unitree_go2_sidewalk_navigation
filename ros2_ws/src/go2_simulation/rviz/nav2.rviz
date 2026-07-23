@@ -48,11 +48,11 @@ Visualization Manager:
         Value: /local_plan
       Color: 0; 200; 80
       Line Width: 0.03
-    - Class: rviz_default_plugins/LaserScan
-      Name: Scan
+    - Class: rviz_default_plugins/PointCloud2
+      Name: ObstacleCloud
       Enabled: true
       Topic:
-        Value: /scan
+        Value: /perception/obstacle_cloud
       Size (m): 0.04
       Color Transformer: FlatColor
       Color: 255; 80; 60

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<robot>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- Gazebo Sim plugins -->
   <gazebo>
     <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
@@ -119,6 +119,11 @@
       <topic>rgb_image</topic>
     </sensor>
   </gazebo>-->
+  <!-- 카메라 토글: GPU 렌더 부하 (rgbd depth+RGB + 720p color ≈ 45렌더/s).
+       RTF 1.0 환경(small_city_test)에서 L1 라이다를 기아 상태로 만들어
+       (10Hz→2.7Hz, 게이트 sensor_timeout) nav 실험은 OFF 권장. -->
+  <xacro:arg name="cameras_enabled" default="true"/>
+  <xacro:if value="$(arg cameras_enabled)">
   <!-- RealSense D435i RGBD Camera + IMU (실제 하드웨어 매칭) -->
   <gazebo reference="camera_link">
     <sensor name="rgbd_camera" type="rgbd_camera">
@@ -201,6 +206,7 @@
       </imu>
     </sensor>
   </gazebo>
+  </xacro:if>
 
   <!-- Main body -->
   <gazebo reference="trunk">

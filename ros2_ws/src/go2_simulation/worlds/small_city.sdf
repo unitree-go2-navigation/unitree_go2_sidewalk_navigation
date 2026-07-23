@@ -1,6 +1,11 @@
 <?xml version="1.0" ?>
 
 <sdf version="1.6">
+<!--
+  small_city(원본, 전체 도시) — 최종 회피 알고리즘 완성 시 실기체 전이 전
+  테스트에 사용한다 (필요에 따라 앞당겨질 수 있음).
+  일상 실험은 축소판 small_city_test.sdf(sidewalk_16 인접 개체만) 사용.
+-->
   <world name="default">
 
     <gui>

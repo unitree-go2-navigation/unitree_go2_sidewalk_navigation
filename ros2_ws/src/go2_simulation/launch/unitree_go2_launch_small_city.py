@@ -94,10 +94,16 @@ def generate_launch_description():
         description="Path to the robot description xacro file",
     )
 
+    # D435i 카메라 렌더 토글 (nav 실험은 OFF — GPU를 L1 라이다에 양보)
+    declare_cameras_enabled = DeclareLaunchArgument(
+        "cameras_enabled", default_value="true"
+    )
+
     # Description nodes and parameters
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
-        Command(["xacro ", xacro_file]),
+        Command(["xacro ", xacro_file,
+                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled")]),
         value_type=str,
     )
     robot_description = {"robot_description": robot_description_content}
@@ -485,6 +491,7 @@ def generate_launch_description():
             declare_world_init_pitch,
             declare_world_init_heading,
             declare_description_path,
+            declare_cameras_enabled,
             gazebo_resource_path,
             small_city_sdf_path,
             gazebo_plugin_path,

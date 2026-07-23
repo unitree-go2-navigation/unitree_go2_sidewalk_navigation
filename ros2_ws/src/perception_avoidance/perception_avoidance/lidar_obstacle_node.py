@@ -34,6 +34,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from geometry_msgs.msg import Pose, PoseArray
 from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import Header
 from sensor_msgs_py import point_cloud2 as pc2
 from vision_msgs.msg import (
     BoundingBox3D,
@@ -155,6 +156,11 @@ class LidarObstacleNode(Node):
             self.get_parameter('vel_topic').value,
             10,
         )
+        # 정제 클라우드 (ROI+self+ground 필터 후, 최신 프레임만) — Nav2
+        # 코스트맵 관측용. /scan 브리지가 없어 obstacle_layer가 장님이었음.
+        self.cloud_pub = self.create_publisher(
+            PointCloud2, '/perception/obstacle_cloud', 10,
+        )
         self.get_logger().info(
             f'lidar_obstacle_node started. '
             f'in={self.get_parameter("points_topic").value} → '
@@ -256,6 +262,15 @@ class LidarObstacleNode(Node):
         if pts_b.shape[0] == 0:
             self._publish_empty(msg.header.stamp)
             return
+
+        # 정제 클라우드 발행 (누적 이력 제외 — mover trail이 코스트맵에
+        # 잔상으로 남는 것 방지)
+        latest = pts_b[ages == float(self._frame_seq)]
+        hdr = Header()
+        hdr.stamp = msg.header.stamp
+        hdr.frame_id = self.target_frame
+        self.cloud_pub.publish(
+            pc2.create_cloud_xyz32(hdr, latest.astype(np.float32)))
 
         # Voxel downsample (3D grid) — 입력이 최신 프레임 우선 정렬이라
         # 같은 voxel에서는 최신 포인트가 남는다
@@ -470,6 +485,12 @@ class LidarObstacleNode(Node):
         vel_out = PoseArray()
         vel_out.header = out.header
         self.vel_pub.publish(vel_out)
+        # 빈 클라우드도 발행 — 코스트맵 센서 신선도 유지
+        hdr = Header()
+        hdr.stamp = stamp
+        hdr.frame_id = self.target_frame
+        self.cloud_pub.publish(
+            pc2.create_cloud_xyz32(hdr, np.zeros((0, 3), dtype=np.float32)))
         # track을 지우지 않고 코스팅 경로로 노화 — 빈 프레임(전체 dropout)
         # 한 번에 모든 id·속도가 리셋되지 않도록
         self._associate([], stamp.sec + stamp.nanosec * 1e-9)

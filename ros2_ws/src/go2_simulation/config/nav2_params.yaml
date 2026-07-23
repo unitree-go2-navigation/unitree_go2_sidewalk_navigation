@@ -40,7 +40,7 @@ controller_server:
       ax_min: -0.5
       ay_max: 0.4
       az_max: 1.0
-      vx_std: 0.25
+      vx_std: 0.35
       vy_std: 0.1
       wz_std: 0.3
       vx_max: 0.5
@@ -50,7 +50,7 @@ controller_server:
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 0.2
-      temperature: 0.3
+      temperature: 0.35
       gamma: 0.015
       motion_model: "Omni"
       visualize: false
@@ -69,6 +69,8 @@ controller_server:
         cost_power: 1
         cost_weight: 5.0
         threshold_to_consider: 1.4
+      # 전진 견인: PathFollow를 올려 궤적이 경로 앞쪽을 적극 추종
+      #(저속의 주범이던 정렬 견인·비용 회피와 균형)
       GoalAngleCritic:
         enabled: true
         cost_power: 1
@@ -99,8 +101,8 @@ controller_server:
       PathFollowCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
-        offset_from_furthest: 5
+        cost_weight: 8.0
+        offset_from_furthest: 6
         threshold_to_consider: 1.4
       PathAngleCritic:
         enabled: true
@@ -127,22 +129,27 @@ local_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: scan
-        scan:
-          topic: /scan
+        # /scan은 브리지에 없어 무발행 — obstacle_layer가 나브 모드 내내
+        # 장님이었음 (2026-07-23 실측). 게이트와 같은 정제 클라우드 사용.
+        observation_sources: obstacle_cloud
+        obstacle_cloud:
+          topic: /perception/obstacle_cloud
           max_obstacle_height: 2.0
+          min_obstacle_height: 0.0
           clearing: True
           marking: True
-          data_type: "LaserScan"
+          data_type: "PointCloud2"
           raytrace_max_range: 8.0
           obstacle_max_range: 6.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         # 0.35/5.0 (0.55/3.0→): 보도 실폭 2.65m에서 0.55 팽창은 주행대
         # 전체를 고비용으로 덮어 MPPI가 상시 감속 (관찰: cmd 중앙값 0.14,
-        # RViz 코스트맵 대부분 고비용 — 사용자 보고 #2)
+        # RViz 코스트맵 대부분 고비용 — 사용자 보고 #2).
+        # 0.42 = footprint 외접반경(0.4168) 이상 — SE2 충돌검사 최적화 요건
+        # (0.35는 controller_server ERROR 유발). 중앙 저비용대 1.8m 유지.
         cost_scaling_factor: 5.0
-        inflation_radius: 0.35
+        inflation_radius: 0.42
       always_send_full_costmap: True
 
 global_costmap:
@@ -162,13 +169,15 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: scan
-        scan:
-          topic: /scan
+        # local과 동일 사유 — 정제 클라우드로 교체
+        observation_sources: obstacle_cloud
+        obstacle_cloud:
+          topic: /perception/obstacle_cloud
           max_obstacle_height: 2.0
+          min_obstacle_height: 0.0
           clearing: True
           marking: True
-          data_type: "LaserScan"
+          data_type: "PointCloud2"
           raytrace_max_range: 10.0
           obstacle_max_range: 8.0
       inflation_layer:
