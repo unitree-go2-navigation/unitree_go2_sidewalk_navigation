@@ -88,6 +88,11 @@ BAND_EMA_ALPHA = 0.4       # band 경계 평활 (요 sway 에지 진동 완화)
 # 에서 최대 -0.35까지 관측됨 (yield_probe 실측: RESUME 18s 불발) — 실제
 # 대면 보행자(-1.6)와의 분리대를 확보. 밴드 겹침 요구와 이중 방어.
 YIELD_APPROACH_VX = -0.5   # 접근 판정 상대 vx 상한
+# 지상 접근 요건: 상대 vx는 로봇이 빨라질수록 정적 개체도 -0.5 창에 들어옴
+# (순항 0.35에서 가로등·주차차량 오인 양보 루프 실측, 2026-07-23 무액터
+# 벤치마크). 지상 접근(vx_rel + ego_vx)이 이 값보다 빨라야 진입/승계 —
+# 정지물은 지상 ≈0이라 로봇 속도와 무관하게 배제, 보행자(≥0.5)는 통과.
+YIELD_GROUND_APPROACH = -0.3
 # 양보 대상 속도 상한: fast-class(자전거·킥보드, ≥2m/s)는 양보가 아니라
 # P4 조기 STOP 몫 — 크랩(실효 0.1m/s)으로 4~5m/s를 상대하면 여유 0.14
 # 실측. 보행자 대역만 양보.
@@ -771,6 +776,8 @@ class SafetyStopNode(Node):
                             and abs(m2['y'] - prev['y']) < 1.0
                             and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
                             < YIELD_APPROACH_VX
+                            and m2.get('vx', 0.0) + max(self.robot_vx, 0.0)
+                            < YIELD_GROUND_APPROACH
                             and _in_scope(m2)):
                         cur = dict(m2, id=tid2)
                         break
@@ -779,6 +786,8 @@ class SafetyStopNode(Node):
                 if (m2['kind'] == 'person_moving'
                         and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
                         < YIELD_APPROACH_VX
+                        and m2.get('vx', 0.0) + max(self.robot_vx, 0.0)
+                        < YIELD_GROUND_APPROACH
                         and self._person_hist.get(tid2, {}).get('app', 0)
                         >= YIELD_APP_FRAMES
                         and abs(m2['y']) < YIELD_LANE_CONFLICT
