@@ -243,6 +243,36 @@ def test_window_disp_detects_progress_vs_stall(node):
     assert disp is not None and disp >= node.stuck_disp_min
 
 
+def test_yield_move_ignores_stuck_condition(node):
+    now = node.get_clock().now().nanoseconds * 1e-9
+    node.obs_stamp = now
+    node.state = State.YIELD_MOVE
+    node._social_oncoming = {'id': 'onc', 'x': 3.0, 'y': 0.0, 'vx': -1.0}
+    node._yield_start = now
+    node._yield_target = 0.5
+    node._cmd_out_speed = node.stuck_v_min + 0.1
+    node._stall_timer = node.stuck_duration
+    node._pose_hist.append((now - node.stuck_duration, 0.0, 0.0))
+
+    node.tick()
+
+    assert node.state == State.YIELD_MOVE
+    assert node._stall_timer == 0.0
+
+
+def test_nominal_still_transitions_to_stuck(node):
+    now = node.get_clock().now().nanoseconds * 1e-9
+    node.obs_stamp = now
+    node.state = State.NOMINAL
+    node._cmd_out_speed = node.stuck_v_min + 0.1
+    node._stall_timer = node.stuck_duration
+    node._pose_hist.append((now - node.stuck_duration, 0.0, 0.0))
+
+    node.tick()
+
+    assert node.state == State.STUCK
+
+
 # --- blind-hold (사각 소실 유지, 2026-07-13 head_on RESUME 관통 수정) ---
 
 def test_blind_hold_keeps_clearance_on_close_vanish(node):

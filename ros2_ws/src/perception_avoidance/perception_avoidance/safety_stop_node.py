@@ -1257,27 +1257,31 @@ class SafetyStopNode(Node):
                 self._publish_state()
                 return
 
-            self._record_pose(now)
-            disp = self._window_disp(now)
-            if disp is not None and disp >= self.stuck_disp_min:
-                self._recover_attempts = 0         # progressing → clear escalation
+            if self.state in (State.YIELD_MOVE, State.YIELD_WAIT):
+                # 양보 크랩의 의도된 저속 횡이동을 걸림으로 오판해 리셋하지 않음.
+                self._stall_timer = 0.0
+            else:
+                self._record_pose(now)
+                disp = self._window_disp(now)
+                if disp is not None and disp >= self.stuck_disp_min:
+                    self._recover_attempts = 0     # progressing → clear escalation
 
-            commanding = self._cmd_out_speed > self.stuck_v_min
-            self._stall_timer = self._stall_timer + dt if commanding else 0.0
+                commanding = self._cmd_out_speed > self.stuck_v_min
+                self._stall_timer = self._stall_timer + dt if commanding else 0.0
 
-            if (self._stall_timer >= self.stuck_duration
-                    and disp is not None and disp < self.stuck_disp_min):
-                self._recover_attempts += 1
-                if self._recover_attempts > self.max_recover_attempts:
-                    self._publish_zero()
-                    self._set_state(State.ESTOP, reason='stuck_max_attempts')
+                if (self._stall_timer >= self.stuck_duration
+                        and disp is not None and disp < self.stuck_disp_min):
+                    self._recover_attempts += 1
+                    if self._recover_attempts > self.max_recover_attempts:
+                        self._publish_zero()
+                        self._set_state(State.ESTOP, reason='stuck_max_attempts')
+                        self._publish_state()
+                        return
+                    self._begin_recovery(now)
+                    self._pose_hist.clear()        # re-arm window after trigger
+                    self._run_recovery(now)
                     self._publish_state()
                     return
-                self._begin_recovery(now)
-                self._pose_hist.clear()            # re-arm window after trigger
-                self._run_recovery(now)
-                self._publish_state()
-                return
 
         in_stop, in_slow = self._danger_levels()
 
@@ -1342,8 +1346,7 @@ class SafetyStopNode(Node):
             else:
                 out.linear.x = min(max(self.cmd_in.linear.x, 0.0), YIELD_VX)
                 if abs(err) >= LAT_DEADBAND:
-                    # 하한 0.15: 비례 감속 초저속 크랩은 STUCK 오발
-                    # (도달 판정은 reach가 담당)
+                    # 하한 0.15: CHAMP 실효 크랩 저하 중에도 도달까지 횡이동 유지
                     mag = max(0.15, min(YIELD_VY, self.lat_k * abs(err)))
                     out.linear.y = math.copysign(mag, err)
                 if self.pass_rotation:
