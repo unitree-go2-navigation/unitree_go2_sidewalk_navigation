@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """/odom → odom→base_footprint TF 브로드캐스터 (Nav2 통합용).
 
 이 스택의 TF 트리는 base_footprint→base_link→(센서들)만 있고 odom→base가
