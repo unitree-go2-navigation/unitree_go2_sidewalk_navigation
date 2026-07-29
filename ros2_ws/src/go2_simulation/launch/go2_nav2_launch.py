@@ -14,7 +14,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -58,15 +58,20 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}])
 
+    # 맵리스(mapless:=true)면 map_server 자체를 띄우지 않음 — 전역 코스트맵이
+    # rolling으로 전환되어 정적 지도 불필요 (nav2_mapless.yaml 오버레이)
+    mapless = LaunchConfiguration('mapless')
     map_server = Node(
         package='nav2_map_server', executable='map_server',
         name='map_server', output='screen',
+        condition=UnlessCondition(mapless),
         parameters=[{'use_sim_time': use_sim_time,
                      'yaml_filename': os.path.join(
                          pkg, 'maps', 'small_city_strip.yaml')}])
     map_lifecycle = Node(
         package='nav2_lifecycle_manager', executable='lifecycle_manager',
         name='lifecycle_manager_map', output='screen',
+        condition=UnlessCondition(mapless),
         parameters=[{'use_sim_time': use_sim_time, 'autostart': True,
                      'node_names': ['map_server']}])
 
@@ -74,13 +79,19 @@ def generate_launch_description():
     # 역할이 겹치거나 불필요한 노드까지 포함 (미구성 시 lifecycle 중단) —
     # 필요 노드만 명시 기동. 충돌 안전은 우리 안전게이트가 담당.
     params = os.path.join(pkg, 'config', 'nav2_params.yaml')
+    mapless_params = os.path.join(pkg, 'config', 'nav2_mapless.yaml')
     common = [{'use_sim_time': True}, params]
     nav_nodes = [
         Node(package='nav2_controller', executable='controller_server',
              output='screen', parameters=common,
              remappings=[('cmd_vel', 'cmd_vel_nav')]),
+        # planner_server(전역 코스트맵 소유)만 프로파일 분기 — 나머지는 공통
         Node(package='nav2_planner', executable='planner_server',
-             output='screen', parameters=common),
+             output='screen', parameters=common,
+             condition=UnlessCondition(mapless)),
+        Node(package='nav2_planner', executable='planner_server',
+             output='screen', parameters=common + [mapless_params],
+             condition=IfCondition(mapless)),
         Node(package='nav2_behaviors', executable='behavior_server',
              output='screen', parameters=common,
              remappings=[('cmd_vel', 'cmd_vel_nav')]),
@@ -115,6 +126,9 @@ def generate_launch_description():
         # nav 기본 OFF: 카메라 렌더가 L1을 기아 상태로 만듦 (RTF 1.0에서
         # 10Hz→2.7Hz 실측). 데모 POV 필요 시 cameras_enabled:=true
         DeclareLaunchArgument('cameras_enabled', default_value='false'),
+        # true = 사전 지도 없이 rolling 전역 코스트맵 (야외 전이 형태).
+        # 기본 false = 결정적 맵 (회귀 평가 재현성). goal은 30m 창 안에서.
+        DeclareLaunchArgument('mapless', default_value='false'),
         base,
         nav_rviz,
         odom_tf,
