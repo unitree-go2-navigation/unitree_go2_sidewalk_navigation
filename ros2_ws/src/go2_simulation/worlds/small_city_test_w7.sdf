@@ -2,12 +2,13 @@
 
 <sdf version="1.6">
 <!--
-  small_city_test_2x — 보도 폭 6.0m (표준 3.0m의 2배, 남측 확장).
-  용도: 추후 결정 (2026-07-29 기준 미정 — 사용자 지정 예정).
-  월드 3종 사용 의도:
-    - small_city_test      (3m): 표준 반복 실험 (좁은 보도 스트레스 조건)
-    - small_city_test_2x   (6m): 용도 추후 결정
-    - small_city_test_3x   (9m): 다수 장애물·군중 액터 시나리오 무대
+  small_city_test_w7 — 보도 폭 7.0m (표준 3.0m 대비 남측 확장).
+  용도: 다수 정적 장애물 + 다수 보행 액터를 시나리오로 배치해
+  Go2가 틈 사이를 누비며 회피·교행하는 능력을 검증하는 무대.
+  월드 4종 사용 의도:
+    - small_city_test     (보도 3m): 표준 반복 실험 (좁은 보도 스트레스)
+    - small_city_test_w5  (보도 5m): 용도 추후 결정
+    - small_city_test_w7  (보도 7m): 다수 장애물·군중 액터 시나리오 무대
     - small_city (원본 도시): 최종 알고리즘 완성 후 실기체 전이 전 테스트
   노변 물체·액터는 비워둠 — 시나리오에서 명시적으로 배치.
   생성: verification/gen_wide_worlds.py (small_city_test.sdf 기반)
@@ -322,12 +323,12 @@
     -->
     <model name="sidewalk_16_raised_collision_test">
       <static>true</static>
-      <pose>15.000000 3.7 0.160000 0 0 0</pose>
+      <pose>15.000000 3.2 0.160000 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry>
             <box>
-              <size>52.600000 6.0 0.01</size>
+              <size>52.600000 7.0 0.01</size>
             </box>
           </geometry>
           <surface>
@@ -397,30 +398,30 @@
       <geometry>
         <polyline>
           <height>0.15</height>
-          <point>-11.3 1.7</point>
-          <point>-11.275528258147578 1.390983</point>
-          <point>-11.204508497187474 1.112215</point>
-          <point>-11.093892626146237 0.890983</point>
-          <point>-10.954508497187474 0.748943</point>
-          <point>-10.8 0.7</point>
-          <point>40.8 0.7</point>
-          <point>40.95450849718747 0.748943</point>
-          <point>41.093892626146236 0.890983</point>
-          <point>41.20450849718747 1.112215</point>
-          <point>41.275528258147574 1.390983</point>
-          <point>41.3 1.7</point>
-          <point>41.3 5.7</point>
-          <point>41.275528258147574 6.009017</point>
-          <point>41.20450849718747 6.287785</point>
-          <point>41.093892626146236 6.509017</point>
-          <point>40.95450849718747 6.651057</point>
+          <point>-11.3 0.866667</point>
+          <point>-11.275528258147578 0.506147</point>
+          <point>-11.204508497187474 0.180917</point>
+          <point>-11.093892626146237 -0.077186</point>
+          <point>-10.954508497187474 -0.242899</point>
+          <point>-10.8 -0.3</point>
+          <point>40.8 -0.3</point>
+          <point>40.95450849718747 -0.242899</point>
+          <point>41.093892626146236 -0.077186</point>
+          <point>41.20450849718747 0.180917</point>
+          <point>41.275528258147574 0.506147</point>
+          <point>41.3 0.866667</point>
+          <point>41.3 5.533333</point>
+          <point>41.275528258147574 5.893853</point>
+          <point>41.20450849718747 6.219083</point>
+          <point>41.093892626146236 6.477186</point>
+          <point>40.95450849718747 6.642899</point>
           <point>40.8 6.7</point>
           <point>-10.8 6.7</point>
-          <point>-10.954508497187474 6.651057</point>
-          <point>-11.093892626146237 6.509017</point>
-          <point>-11.204508497187474 6.287785</point>
-          <point>-11.275528258147578 6.009017</point>
-          <point>-11.3 5.7</point>
+          <point>-10.954508497187474 6.642899</point>
+          <point>-11.093892626146237 6.477186</point>
+          <point>-11.204508497187474 6.219083</point>
+          <point>-11.275528258147578 5.893853</point>
+          <point>-11.3 5.533333</point>
         </polyline>
       </geometry>
       <material>

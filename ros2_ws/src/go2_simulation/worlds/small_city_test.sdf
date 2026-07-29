@@ -5,9 +5,9 @@
   small_city_test — small_city의 축소판 (sidewalk_16 인접 개체만 유지).
   용도: 회피 알고리즘 실험 전용 (가벼운 반복 실험).
   월드 가족 사용 의도 (2026-07-29):
-    - small_city_test      (보도 3m): 표준 반복 실험 (좁은 보도 스트레스)
-    - small_city_test_2x   (보도 6m): 용도 추후 결정
-    - small_city_test_3x   (보도 9m): 다수 장애물·군중 액터 시나리오 무대
+    - small_city_test     (보도 3m): 표준 반복 실험 (좁은 보도 스트레스)
+    - small_city_test_w5  (보도 5m): 용도 추후 결정
+    - small_city_test_w7  (보도 7m): 다수 장애물·군중 액터 시나리오 무대
     - small_city (원본 도시): 최종 알고리즘 완성 후 실기체 전이 전 테스트
   생성: verification/gen_test_world.py, 광폭 변형은 gen_wide_worlds.py
   (재생성 시 수동 편집분 소실 주의)
