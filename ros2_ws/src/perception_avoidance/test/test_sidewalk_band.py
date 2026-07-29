@@ -57,3 +57,44 @@ def test_nan_ref_area_tolerated():
     g[bin_y > 3.0] = -0.2
     y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
     assert -3.3 < y0 < -2.7 and 2.7 < y1 < 3.3
+
+
+# --- 평면 보정 + 경계 추적기 (요동 억제, 2026-07-29) ---
+
+from perception_avoidance.sidewalk_polygon_node import (EdgeTracker,
+                                                        fit_ground_plane)
+
+
+def test_plane_fit_recovers_tilt():
+    # 1도 피치 평면 → 계수 복원 (8m에서 0.14m 오차 원인 제거 확인)
+    rng = np.random.default_rng(7)
+    xy = rng.uniform(-1.2, 1.2, (200, 2))
+    a = math.tan(math.radians(1.0))
+    z = a * xy[:, 0] + 0.0 * xy[:, 1] - 0.3 + rng.normal(0, 0.01, 200)
+    pts = np.column_stack([xy[:, 0], xy[:, 1], z])
+    coef = fit_ground_plane(pts)
+    assert coef is not None and abs(coef[0] - a) < 0.005
+
+
+def test_tracker_absorbs_noise():
+    t = EdgeTracker(2.0)
+    for v in [2.1, 1.9, 2.05, 1.95, 2.1]:
+        t.update(v)
+    assert 1.9 < t.v < 2.1
+
+
+def test_tracker_ignores_single_outlier():
+    t = EdgeTracker(2.0)
+    t.update(5.0)      # 원거리 깜빡임 스파이크 1프레임
+    t.update(2.0)
+    assert abs(t.v - 2.0) < 0.05
+
+
+def test_tracker_follows_persistent_change_rate_limited():
+    t = EdgeTracker(2.0)
+    for _ in range(3):
+        t.update(4.0)  # 3프레임 연속 합의 → 이동 시작
+    assert 2.2 < t.v <= 2.4      # rate 0.3/프레임 제한
+    for _ in range(10):
+        t.update(4.0)
+    assert t.v > 3.5             # 지속 신호는 결국 수렴

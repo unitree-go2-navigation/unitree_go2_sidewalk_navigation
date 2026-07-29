@@ -44,6 +44,50 @@ def quat_to_rot_matrix(qx, qy, qz, qw):
     ])
 
 
+def fit_ground_plane(pts):
+    """근거리 지면 점들로 평면 z = ax + by + c 최소제곱 적합.
+
+    보행 중 몸통 피치/롤이 base_link 높이 프로파일을 통째로 기울여
+    (1° ≈ 8m 횡거리에서 0.14m — 연석 문턱 0.10 초과) 경계가 요동하는
+    것을 막는 핵심. 표본 부족 시 None.
+    """
+    if pts.shape[0] < 20:
+        return None
+    A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(pts.shape[0])])
+    coef, *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
+    return coef  # (a, b, c)
+
+
+class EdgeTracker:
+    """밴드 경계 1개의 시간 평활 — 히스테리시스 + 변화율 제한.
+
+    작은 편차(<jump)는 느린 EMA로 흡수, 큰 편차는 confirm 프레임 연속
+    같은 방향일 때만 rate 한도로 이동 (원거리 표본 깜빡임이 만드는
+    프레임 단위 수 m 점프 차단).
+    """
+
+    def __init__(self, init, alpha=0.15, jump=0.15, confirm=3, rate=0.3):
+        self.v = float(init)
+        self.alpha, self.jump, self.confirm, self.rate = alpha, jump, confirm, rate
+        self._pend_dir = 0
+        self._pend_n = 0
+
+    def update(self, new):
+        d = new - self.v
+        if abs(d) < self.jump:
+            self.v += self.alpha * d
+            self._pend_dir, self._pend_n = 0, 0
+        else:
+            direction = 1 if d > 0 else -1
+            if direction == self._pend_dir:
+                self._pend_n += 1
+            else:
+                self._pend_dir, self._pend_n = direction, 1
+            if self._pend_n >= self.confirm:
+                self.v += max(-self.rate, min(self.rate, d))
+        return self.v
+
+
 def find_band_edges(bin_y, ground_h, wall_n, ref_h,
                     drop_thresh=0.10, wall_min=5, max_gap_bins=5):
     """지상 높이 프로파일에서 보도 밴드의 좌/우 경계(base y)를 찾는다.
@@ -97,7 +141,7 @@ class SidewalkPolygonNode(Node):
         self.declare_parameter('curb_drop', 0.10)       # 연석 낙차 문턱 (실제 0.16)
         self.declare_parameter('wall_z', [0.3, 1.8])    # 벽 후보 z 대역
         self.declare_parameter('wall_min_pts', 5)
-        self.declare_parameter('edge_alpha', 0.3)       # 경계 EMA
+        self.declare_parameter('edge_alpha', 0.15)      # 경계 EMA (히스테리시스 동반)
         self.declare_parameter('stale_hold_s', 2.0)
         self.declare_parameter('poly_x_extent', [-2.0, 8.0])  # 출력 직사각 x
 
@@ -193,6 +237,17 @@ class SidewalkPolygonNode(Node):
             self._publish_lidar(msg.header.stamp)
             return
 
+        # 지면 평면 보정: 근거리(|y|≤1.2) 지면 점으로 평면 적합 →
+        # 이후 높이는 전부 '평면 대비 상대 높이' (피치/롤 오차 제거)
+        z = pts[:, 2]
+        near_g = pts[(np.abs(pts[:, 1]) <= 1.2) & (z > -0.6) & (z < 0.0)]
+        plane = fit_ground_plane(near_g)
+        if plane is None:
+            self._publish_lidar(msg.header.stamp)
+            return
+        a_, b_, c_ = plane
+        h = z - (a_ * pts[:, 0] + b_ * pts[:, 1] + c_)
+
         nb = int(2 * self.lat_range / self.bin_size)
         idx = np.clip(((pts[:, 1] + self.lat_range) / self.bin_size)
                       .astype(int), 0, nb - 1)
@@ -200,46 +255,35 @@ class SidewalkPolygonNode(Node):
         ground_h = np.full(nb, np.nan)
         wall_n = np.zeros(nb, dtype=int)
 
-        z = pts[:, 2]
-        # 지면 후보: 발밑 부근 대역 (base_link 기준 대략 -0.5~0.0).
-        # 연석 아래 도로면(-0.16 추가)까지 포함되도록 하한 넉넉히.
-        gmask = (z > -0.6) & (z < 0.0)
-        wmask = (z > self.wall_z[0]) & (z < self.wall_z[1])
+        gmask = np.abs(h) < 0.35          # 평면 대비 지면 대역
+        wmask = (h > self.wall_z[0]) & (h < self.wall_z[1])
         for b in range(nb):
             sel = idx == b
-            gz = z[sel & gmask]
+            gz = h[sel & gmask]
             if gz.size >= 3:
                 ground_h[b] = float(np.median(gz))
             wall_n[b] = int(np.count_nonzero(sel & wmask))
 
-        # 기준 높이 = 로봇 정면 ±0.5m bin들의 지면 중앙값
-        near = np.abs(bin_y) <= 0.5
-        ref_vals = ground_h[near]
-        ref_vals = ref_vals[~np.isnan(ref_vals)]
-        if ref_vals.size == 0:
-            self._publish_lidar(msg.header.stamp)
-            return
-        ref_h = float(np.median(ref_vals))
-
+        # 평면 보정 후 기준 높이 = 0 (평면 자체가 발밑 지면)
         y_min, y_max = find_band_edges(
-            bin_y, ground_h, wall_n, ref_h,
+            bin_y, ground_h, wall_n, 0.0,
             drop_thresh=self.curb_drop, wall_min=self.wall_min)
         if y_max - y_min < 1.0:      # 비상식적 협폭 → 노이즈 판정, 유지
             self._publish_lidar(msg.header.stamp)
             return
 
         if self._edges is None:
-            self._edges = [y_min, y_max]
+            self._edges = [EdgeTracker(y_min, alpha=self.alpha),
+                           EdgeTracker(y_max, alpha=self.alpha)]
         else:
-            a = self.alpha
-            self._edges[0] += a * (y_min - self._edges[0])
-            self._edges[1] += a * (y_max - self._edges[1])
+            self._edges[0].update(y_min)
+            self._edges[1].update(y_max)
         self._last_est = self.get_clock().now().nanoseconds * 1e-9
         if not self._logged_first:
             self._logged_first = True
             self.get_logger().info(
                 f'lidar band first estimate: y=[{y_min:.2f}, {y_max:.2f}] '
-                f'width={y_max - y_min:.2f}m ref_h={ref_h:.2f}')
+                f'width={y_max - y_min:.2f}m plane=({a_:.4f},{b_:.4f})')
         self._publish_lidar(msg.header.stamp)
 
     def _publish_lidar(self, stamp):
@@ -248,7 +292,7 @@ class SidewalkPolygonNode(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         if self._last_est is not None and now - self._last_est > self.stale_hold:
             return                     # 오래 실패 → 발행 중단 (소비자 폴백)
-        y0, y1 = self._edges
+        y0, y1 = self._edges[0].v, self._edges[1].v
         x0, x1 = self.poly_x
         msg = PolygonStamped()
         msg.header.stamp = stamp
