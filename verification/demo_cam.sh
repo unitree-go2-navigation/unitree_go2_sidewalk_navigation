@@ -3,7 +3,7 @@
 # 카메라가 로봇을 사람 눈높이 3인칭 구도로 따라간다.
 #
 # 사용법:  ./verification/demo_cam.sh [엔티티] [x] [y] [z]
-#   기본값: go2, 뒤 1.0m / 옆 0.0m / 높이 1.65m(사람 눈높이)
+#   기본값: go2, 뒤 1.0m / 옆 0.0m / 높이 0.8m
 #   예) 측면 구도:  ./verification/demo_cam.sh go2 -2.0 2.5 1.65
 #
 # 주의: 버전에 따라 오프셋이 로봇 회전을 따라 돌지 않고 월드 방향으로
@@ -14,7 +14,7 @@ source /opt/ros/jazzy/setup.bash 2>/dev/null
 ENTITY=${1:-go2}
 OX=${2:--1.0}
 OY=${3:-0.0}
-OZ=${4:-1.65}
+OZ=${4:-0.8}
 
 echo "추적 대상: $ENTITY, 오프셋: ($OX, $OY, $OZ) — GUI 대기 중..."
 for i in $(seq 1 30); do
