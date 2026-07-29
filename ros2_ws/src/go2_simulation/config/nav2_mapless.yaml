@@ -13,7 +13,7 @@ global_costmap:
       rolling_window: True
       width: 30
       height: 30
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["stvl_layer", "inflation_layer"]
       # 미관측 = free (낙관적) — 정적 레이어 없이 전방 계획 가능하게
       track_unknown_space: false
 
