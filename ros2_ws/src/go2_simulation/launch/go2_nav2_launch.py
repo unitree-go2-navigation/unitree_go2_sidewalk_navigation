@@ -34,6 +34,7 @@ def generate_launch_description():
             'world_init_heading': LaunchConfiguration('world_init_heading'),
             'degrade_profile': LaunchConfiguration('degrade_profile'),
             'cameras_enabled': LaunchConfiguration('cameras_enabled'),
+            'band_source': LaunchConfiguration('band_source'),
             # Nav2가 횡제어 소유 → 소셜 레이어 OFF (두 횡제어기 충돌 방지;
             # 게이트는 안전 본연 역할 유지)
             'safety_stop_extra_params': os.path.join(
@@ -129,6 +130,10 @@ def generate_launch_description():
         # true = 사전 지도 없이 rolling 전역 코스트맵 (야외 전이 형태).
         # 기본 false = 결정적 맵 (회귀 평가 재현성). goal은 30m 창 안에서.
         DeclareLaunchArgument('mapless', default_value='false'),
+        # 보도 밴드 출처 — config(사전 정의) | lidar(실시간 연석·벽 추정).
+        # 사전 주입 최소화 방침(2026-07-29)에 따라 lidar 권장; config는
+        # 러너 회귀 재현성용 유지.
+        DeclareLaunchArgument('band_source', default_value='config'),
         base,
         nav_rviz,
         odom_tf,

@@ -99,6 +99,11 @@ def generate_launch_description():
         "cameras_enabled", default_value="true"
     )
 
+    # 보도 밴드 출처: config(사전 정의, 회귀 재현성) | lidar(실시간 추정)
+    declare_band_source = DeclareLaunchArgument(
+        "band_source", default_value="config"
+    )
+
     # Description nodes and parameters
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
@@ -324,6 +329,8 @@ def generate_launch_description():
         parameters=[
             sidewalk_polygon_yaml,
             {'use_sim_time': use_sim_time},
+            # config = 월드 고정 YAML(결정적, 회귀용) / lidar = 실시간 추정
+            {'band_source': LaunchConfiguration('band_source')},
         ],
     )
 
@@ -492,6 +499,7 @@ def generate_launch_description():
             declare_world_init_heading,
             declare_description_path,
             declare_cameras_enabled,
+            declare_band_source,
             gazebo_resource_path,
             small_city_sdf_path,
             gazebo_plugin_path,
