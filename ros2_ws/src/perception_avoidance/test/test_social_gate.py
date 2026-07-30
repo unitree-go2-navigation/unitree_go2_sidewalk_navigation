@@ -461,3 +461,24 @@ def test_watchdog_extended_while_approaching(node):
     node._t_yield_clear = 0.0
     node._yield_wait_start = now - 10.0
     assert node._next_state(False, False, True) == State.YIELD_WAIT
+
+
+# --- 시간 기준 양보 발동 (2026-07-30) ---
+
+def test_engage_time_based_far_fast(node):
+    # 빠른 접근(1.4): 8m에서도 조우 5.7s ≤ 7s → 발동
+    node.social_steering = False
+    node._social_oncoming = {'id': 'o', 'x': 8.0, 'y': 0.0, 'vx': -1.4}
+    node._band = (-1.3, 1.3)
+    node._update_yield(no_gap=False)
+    assert node._yield_frames > 0      # 발동 경로 진입 (no_gap 강제됨)
+
+
+def test_engage_time_based_near_slow(node):
+    # 느린 접근(0.35): 4m면 조우 11s > 7s → 미발동
+    node.social_steering = False
+    node._social_oncoming = {'id': 'o', 'x': 4.0, 'y': 0.0, 'vx': -0.35}
+    node._band = (-1.3, 1.3)
+    node._yield_frames = 0
+    node._update_yield(no_gap=False)
+    assert node._yield_frames == 0

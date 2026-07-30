@@ -115,7 +115,12 @@ YIELD_SCOPE_X = 10.0
 # nav 모드 강제 양보 발동 창: 래치는 10m부터 하되 실제 양보 개시는 이
 # 거리부터 — 원거리 접근자에게까지 즉시 정지·대기하는 과잉 (관찰 실측:
 # 8.1m 래치 → 30초 제자리, 사용자 보고 #1)
-YIELD_ENGAGE_X = 6.0
+# 시간 기준 발동 (2026-07-30, 고정 거리 6m 대체): 조우까지 남은 시간이
+# 변위 완성 시간 이하일 때 발동 — 빠른 접근자엔 일찍, 느린 접근자엔
+# 늦게 (위험 비례). 유도: 필요 변위 0.76m / 크랩 실효 ~0.13-0.2m/s
+# ≈ 4~6s + 여유 → 7s. 접근속도 1.2면 8.4m, 0.7이면 4.9m, 0.4면 2.8m.
+YIELD_ENGAGE_T = 7.0
+YIELD_ENGAGE_VMIN = 0.3    # 조우 시간 분모 하한 (준정지 발산 방지)
 YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 방어)
 YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15 + 반폭)
 YIELD_REACH = 0.12         # 가장자리 도달 판정 오차 (m)
@@ -134,7 +139,10 @@ YIELD_WAIT_MAX = 8.0
 YIELD_RELATCH_BLOCK = 3.0
 YIELD_VX = 0.0             # 이동 중 전진 0 (순수 크랩 — CHAMP 실효 크랩이
                            # 명령의 ~50%(0.2→0.1 실측)라 접근 시간 확보가 관건)
-YIELD_VY = 0.25            # 크랩 명령 상한 = gait max_linear_velocity_y
+# 0.4 (0.25→, 2026-07-30): gait 한계는 0.9라 게이트 상한이 병목이었음.
+# sway 실측(크랩 0.5 명령에서 ±0.042)상 0.4는 안정 대역 — 변위 완성
+# 시간 단축 (지연 발동 조우의 미완 접촉 대응).
+YIELD_VY = 0.4             # 크랩 명령 상한
 # Nav2 모드 대각 탈출: 순수 크랩(실효 ~0.1m/s)은 근거리 조우(경고 <9m)에서
 # 물리적으로 이탈 불가 (GUI 실측: 0.26m 이동 후 관통). 회피 측으로 회전하며
 # 전진하면 횡 성분 ~0.2-0.3 — 2~3배. 방향 복구는 통과 후 Nav2 재계획 몫이라
@@ -966,9 +974,11 @@ class SafetyStopNode(Node):
         코리도 STOP이 로봇을 차선 안에 동결시켜 비회피 액터가 관통
         (nav 검증 실측: 횡 이탈 0, clr -0.53).
         """
-        if (not self.social_steering and self._social_oncoming is not None
-                and self._social_oncoming['x'] < YIELD_ENGAGE_X):
-            no_gap = True
+        if not self.social_steering and self._social_oncoming is not None:
+            m = self._social_oncoming
+            closing = max(YIELD_ENGAGE_VMIN, -m.get('vx', 0.0))
+            if m['x'] / closing <= YIELD_ENGAGE_T:
+                no_gap = True
         if self._social_oncoming is None:
             self._yield_frames = 0
             self._yield_req = False
