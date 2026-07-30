@@ -12,34 +12,60 @@ twist_mux는 미설치라 보류 (설치 후 teleop 우선순위 먹싱 추가 �
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
+                            OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _resolve_world(context):
+    """world 인자 해석: 경로가 아니면 짧은 이름으로 간주해 패키지 월드에서
+    찾는다 (w7 → small_city_test_w7.sdf 등). 잘못된 경로로 gz만 조용히
+    죽고 RViz는 뜨는 사고(2026-07-30, $W 미정의) 재발 방지 — 실패 시
+    가용 월드 목록과 함께 즉시 에러."""
+    pkg = get_package_share_directory('go2_simulation')
+    wdir = os.path.join(pkg, 'worlds')
+    raw = LaunchConfiguration('world').perform(context)
+    if os.sep in raw:                      # 경로 지정 — 존재만 검증
+        if not os.path.isfile(raw):
+            raise RuntimeError(f'world 파일 없음: {raw}')
+        return raw
+    for cand in (raw, f'{raw}.sdf', f'small_city_test_{raw}.sdf',
+                 f'small_city_{raw}.sdf'):
+        p = os.path.join(wdir, cand)
+        if os.path.isfile(p):
+            return p
+    avail = sorted(f[:-4] for f in os.listdir(wdir) if f.endswith('.sdf')
+                   and os.path.isfile(os.path.join(wdir, f)))
+    raise RuntimeError(f"world '{raw}' 해석 실패 — 가용: {avail}")
+
+
 def generate_launch_description():
     pkg = get_package_share_directory('go2_simulation')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    base = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg, 'launch', 'unitree_go2_launch_small_city.py')),
-        launch_arguments={
-            'gui': LaunchConfiguration('gui'),
-            'rviz': LaunchConfiguration('rviz'),
-            'world': LaunchConfiguration('world'),
-            'oracle_csv': LaunchConfiguration('oracle_csv'),
-            'world_init_heading': LaunchConfiguration('world_init_heading'),
-            'degrade_profile': LaunchConfiguration('degrade_profile'),
-            'cameras_enabled': LaunchConfiguration('cameras_enabled'),
-            'band_source': LaunchConfiguration('band_source'),
-            # Nav2가 횡제어 소유 → 소셜 레이어 OFF (두 횡제어기 충돌 방지;
-            # 게이트는 안전 본연 역할 유지)
-            'safety_stop_extra_params': os.path.join(
-                pkg, 'config', 'safety_social_off_nav.yaml'),
-        }.items())
+    def _base(context):
+        return [IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(pkg, 'launch', 'unitree_go2_launch_small_city.py')),
+            launch_arguments={
+                'gui': LaunchConfiguration('gui'),
+                'rviz': LaunchConfiguration('rviz'),
+                'world': _resolve_world(context),
+                'oracle_csv': LaunchConfiguration('oracle_csv'),
+                'world_init_heading': LaunchConfiguration('world_init_heading'),
+                'degrade_profile': LaunchConfiguration('degrade_profile'),
+                'cameras_enabled': LaunchConfiguration('cameras_enabled'),
+                'band_source': LaunchConfiguration('band_source'),
+                # Nav2가 횡제어 소유 → 소셜 레이어 OFF (두 횡제어기 충돌
+                # 방지; 게이트는 안전 본연 역할 유지)
+                'safety_stop_extra_params': os.path.join(
+                    pkg, 'config', 'safety_social_off_nav.yaml'),
+            }.items())]
+
+    base = OpaqueFunction(function=_base)
 
     # gui:=true면 Nav2 디스플레이(costmap·경로·footprint·보도 밴드) 포함
     # 전용 RViz도 함께 (base 런치의 rviz 인자와 별개 — 이중 실행 방지 위해
