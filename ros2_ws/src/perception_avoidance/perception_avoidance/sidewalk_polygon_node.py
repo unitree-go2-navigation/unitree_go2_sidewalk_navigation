@@ -88,6 +88,42 @@ class EdgeTracker:
         return self.v
 
 
+def band_to_odom(a, b_lo, b_hi, rx, ry, ryaw):
+    """base 좌표 밴드 직선(기울기 a, 절편 b_lo/b_hi) → odom 모델.
+
+    반환 (ux, uy, c_lo, c_hi): 밴드 방향 단위벡터(odom) + 각 경계선의
+    법선 오프셋 (점P가 경계선 위 ⇔ P·n = c, n = (-uy, ux)).
+    요잉과 무관한 좌표에서 추적하기 위한 표현 (2026-07-30 v3).
+    """
+    phi = ryaw + math.atan(a)
+    ux, uy = math.cos(phi), math.sin(phi)
+    cr, sr = math.cos(ryaw), math.sin(ryaw)
+    out = []
+    for b in (b_lo, b_hi):
+        px = rx + (-sr) * b          # base (0, b) → odom
+        py = ry + cr * b
+        out.append(-uy * px + ux * py)   # P·n
+    return ux, uy, out[0], out[1]
+
+
+def band_to_base(ux, uy, c_lo, c_hi, rx, ry, ryaw, x0, x1):
+    """odom 밴드 모델 → 현재 base 좌표 꼭짓점 4개 [(x,y)...].
+
+    로봇의 밴드 방향 투영점 기준 전방 x0~x1 구간의 평행사변형.
+    """
+    s_r = rx * ux + ry * uy
+    cr, sr = math.cos(ryaw), math.sin(ryaw)
+    lo, hi = min(c_lo, c_hi), max(c_lo, c_hi)
+    pts = []
+    for s, c in ((s_r + x0, lo), (s_r + x1, lo),
+                 (s_r + x1, hi), (s_r + x0, hi)):
+        px = ux * s - uy * c
+        py = uy * s + ux * c
+        dx, dy = px - rx, py - ry
+        pts.append((cr * dx + sr * dy, -sr * dx + cr * dy))
+    return pts
+
+
 def fit_band_lines(slice_x, lo_list, hi_list, slope_max=0.6):
     """x 구간별 좌/우 경계 표본 → 공통 기울기 직선 (a, b_lo, b_hi).
 
@@ -199,8 +235,9 @@ class SidewalkPolygonNode(Node):
             self.alpha = gp('edge_alpha')
             self.stale_hold = gp('stale_hold_s')
             self.poly_x = gp('poly_x_extent')
-            self._edges = None          # (y_min, y_max) EMA
-            self._slope = 0.0           # 연석 방향 기울기 (base, EMA)
+            self._edges = None          # 호환 잔재 (v3: _dir/_offs 사용)
+            self._dir = None            # 밴드 방향 단위벡터 (odom)
+            self._offs = None           # 경계 법선 오프셋 추적기 2개 (odom)
             self._last_est = None       # 마지막 유효 추정 시각 (sec)
             self.tf_buffer = tf2_ros.Buffer()
             self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -345,14 +382,24 @@ class SidewalkPolygonNode(Node):
             self._publish_lidar(msg.header.stamp)   # 표본 부족/협폭 → 유지
             return
 
-        if self._edges is None:
-            self._edges = [EdgeTracker(b_lo, alpha=self.alpha),
-                           EdgeTracker(b_hi, alpha=self.alpha)]
-            self._slope = a
+        if self._odom is None:
+            return                       # odom 자세 없이는 모델 갱신 불가
+        rx, ry, ryaw, _ = self._odom
+        ux, uy, c_lo, c_hi = band_to_odom(a, b_lo, b_hi, rx, ry, ryaw)
+        if self._dir is None:
+            self._dir = [ux, uy]
+            self._offs = [EdgeTracker(c_lo, alpha=self.alpha),
+                          EdgeTracker(c_hi, alpha=self.alpha)]
         else:
-            self._edges[0].update(b_lo)
-            self._edges[1].update(b_hi)
-            self._slope += 0.2 * (a - self._slope)   # 기울기 EMA
+            if ux * self._dir[0] + uy * self._dir[1] < 0:
+                ux, uy = -ux, -uy        # 무방향 직선 — 부호 정렬 후 EMA
+                c_lo, c_hi = -c_hi, -c_lo
+            self._dir[0] += 0.2 * (ux - self._dir[0])
+            self._dir[1] += 0.2 * (uy - self._dir[1])
+            n = math.hypot(*self._dir)
+            self._dir = [self._dir[0] / n, self._dir[1] / n]
+            self._offs[0].update(c_lo)
+            self._offs[1].update(c_hi)
         self._last_est = self.get_clock().now().nanoseconds * 1e-9
         if not self._logged_first:
             self._logged_first = True
@@ -364,21 +411,23 @@ class SidewalkPolygonNode(Node):
         self._publish_lidar(msg.header.stamp)
 
     def _publish_lidar(self, stamp):
-        if self._edges is None:
+        if self._dir is None:
             return
         now = self.get_clock().now().nanoseconds * 1e-9
         if self._last_est is not None and now - self._last_est > self.stale_hold:
             return                     # 오래 실패 → 발행 중단 (소비자 폴백)
-        y0, y1 = self._edges[0].v, self._edges[1].v
-        a = self._slope
+        if self._dir is None or self._odom is None:
+            return
+        rx, ry, ryaw, _ = self._odom
         x0, x1 = self.poly_x
+        pts4 = band_to_base(self._dir[0], self._dir[1],
+                            self._offs[0].v, self._offs[1].v,
+                            rx, ry, ryaw, x0, x1)
         msg = PolygonStamped()
         msg.header.stamp = stamp
         msg.header.frame_id = 'base_link'
-        # 연석 방향(기울기 a)을 따르는 평행사변형 — 요잉 시에도 실제
-        # 보도 축과 정렬 (게이트는 스트립 클리핑이라 그대로 소비 가능)
-        for x, y in ((x0, a * x0 + y0), (x1, a * x1 + y0),
-                     (x1, a * x1 + y1), (x0, a * x0 + y1)):
+        # odom 고정 모델을 현재 자세로 역변환 — 요잉해도 밴드는 보도에 고정
+        for x, y in pts4:
             msg.polygon.points.append(Point32(x=float(x), y=float(y), z=0.0))
         self.pub.publish(msg)
 

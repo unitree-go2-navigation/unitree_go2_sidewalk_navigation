@@ -135,3 +135,44 @@ def test_band_lines_slope_clamped():
     hi = [3.0, 9.0]
     a, _, _ = fit_band_lines(sx, lo, hi)
     assert abs(a) <= 0.6
+
+
+# --- odom 프레임 밴드 모델 v3 (2026-07-30) ---
+
+from perception_avoidance.sidewalk_polygon_node import (band_to_base,
+                                                        band_to_odom)
+
+
+def test_band_odom_roundtrip():
+    # base 추정 → odom → base 역변환이 원래 직선과 일치 (요 0.3에서)
+    rx, ry, ryaw = 10.0, 5.0, 0.3
+    ux, uy, c_lo, c_hi = band_to_odom(0.0, -1.5, 1.5, rx, ry, ryaw)
+    pts = band_to_base(ux, uy, c_lo, c_hi, rx, ry, ryaw, 0.0, 4.0)
+    # 같은 x 꼭짓점 쌍의 y가 ±1.5 (base에서 밴드 폭 복원)
+    assert abs(pts[0][1] + 1.5) < 1e-6 and abs(pts[3][1] - 1.5) < 1e-6
+
+
+def test_band_model_is_yaw_invariant():
+    # 모델 고정 + 로봇 요만 변화 → odom상 꼭짓점(월드 위치)은 불변
+    rx, ry = 10.0, 5.0
+    ux, uy, c_lo, c_hi = band_to_odom(0.0, -1.5, 1.5, rx, ry, 0.0)
+
+    def world_corners(ryaw):
+        pts = band_to_base(ux, uy, c_lo, c_hi, rx, ry, ryaw, 0.0, 4.0)
+        out = []
+        for bx, by in pts:
+            wx = rx + math.cos(ryaw) * bx - math.sin(ryaw) * by
+            wy = ry + math.sin(ryaw) * bx + math.cos(ryaw) * by
+            out.append((round(wx, 6), round(wy, 6)))
+        return out
+    assert world_corners(0.0) == world_corners(0.5)   # 요잉해도 월드 고정
+
+
+def test_band_direction_sign_flip_safe():
+    # 반대 방향 추정(무방향 직선)도 같은 밴드를 표현
+    rx, ry = 0.0, 0.0
+    u1 = band_to_odom(0.0, -1.0, 2.0, rx, ry, 0.0)
+    u2 = band_to_odom(0.0, -2.0, 1.0, rx, ry, math.pi)
+    w1 = sorted([min(u1[2], u1[3]), max(u1[2], u1[3])])
+    w2 = sorted([min(u2[2], u2[3]), max(u2[2], u2[3])])
+    assert abs((w1[1]-w1[0]) - (w2[1]-w2[0])) < 1e-6   # 폭 동일
