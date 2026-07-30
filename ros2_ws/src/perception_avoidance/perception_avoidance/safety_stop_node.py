@@ -120,7 +120,13 @@ YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 
 YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15 + 반폭)
 YIELD_REACH = 0.12         # 가장자리 도달 판정 오차 (m)
 YIELD_MOVE_TIMEOUT = 10.0  # 이동 시한 초과 → 그 자리 대기 (배회 방지 백스톱)
-YIELD_CLEAR_T = 1.0        # 접근자 소멸 지속 → RESUME
+YIELD_CLEAR_T = 1.0        # 후방 통과 후 소멸 지속 → RESUME
+# 통과 판정은 긍정 증거 기반 (2026-07-30): 마지막 관측 x가 이 값 미만
+# (몸 옆·후방)이어야 "지나갔다". 전방에서 소실(트래커가 잠깐 놓침)은
+# 통과가 아니므로 긴 유예 — 접근 중 복귀 → 근접 조우 버그(육안 실측) 방지.
+YIELD_PASS_X = 0.5
+YIELD_CLEAR_LOST_T = 3.0   # 전방 소실 시 복귀까지 유예 (진짜 사라진 경우 탈출구)
+YIELD_WAIT_NEAR_MAX = 20.0 # 래치가 살아있고 접근 중이면 워치독 연장 상한
 # 대기 워치독: 정상 해제(통과 후 고스트 4s + clear 1s ≈ 5~6s)를 넘기는
 # 잔존 래치는 강제 해제 — 영구 대기 모드의 구조적 봉쇄 (재래치 3s 금지;
 # 실위협은 코리도/fast STOP이 계속 상위 방어).
@@ -424,6 +430,7 @@ class SafetyStopNode(Node):
         self._yield_start_y = 0.0    # 양보 시작 시 월드 y (실변위 증거용)
         self._yield_need_disp = 0.0  # 도달에 요구되는 최소 실변위
         self._t_yield_clear = 0.0
+        self._yield_last_x = 99.0    # 접근자 마지막 관측 x (통과 긍정 증거)
         self._yield_wait_start = 0.0
         self._yield_block_until = 0.0
         self._recenter_until = None  # 양보 후 복귀 바이어스 만료 시각
@@ -1163,7 +1170,9 @@ class SafetyStopNode(Node):
         # 5b YIELD: in_stop이 위에서 이미 우선 — 안전 서열 불변
         if s == State.YIELD_MOVE:
             if (self._social_oncoming is None
-                    and self._t_yield_clear >= 0.5):
+                    and self._t_yield_clear >= (
+                        0.5 if self._yield_last_x < YIELD_PASS_X
+                        else YIELD_CLEAR_LOST_T)):
                 return State.NOMINAL       # 접근자 소멸(유예 후) — 양보 불필요
             # 도달 = 목표 근접 + 실변위 증거. 목표는 base 좌표라 로봇이
             # 요잉하면 순간적으로 0이 되어 이동 없이 "도달" 오판 (차선
@@ -1177,9 +1186,19 @@ class SafetyStopNode(Node):
                 return State.YIELD_WAIT
             return State.YIELD_MOVE
         if s == State.YIELD_WAIT:
-            if self._t_yield_clear >= YIELD_CLEAR_T:
+            clear_need = (YIELD_CLEAR_T
+                          if self._yield_last_x < YIELD_PASS_X
+                          else YIELD_CLEAR_LOST_T)
+            if self._t_yield_clear >= clear_need:
                 return State.RESUME        # 통과 확인 → 기존 램프 재사용
-            if self._last_tick - self._yield_wait_start > YIELD_WAIT_MAX:
+            # 워치독: 래치가 살아있고 실제로 접근 중이면 연장 (다가오는
+            # 사람 정면으로의 강제 복귀 방지) — 상한 20s는 유지
+            wait_max = YIELD_WAIT_MAX
+            m = self._social_oncoming
+            if (m is not None
+                    and m.get('vx', 0.0) + max(self.robot_vx, 0.0) < -0.3):
+                wait_max = YIELD_WAIT_NEAR_MAX
+            if self._last_tick - self._yield_wait_start > wait_max:
                 # 워치독: 잔존 래치 강제 해제 (permanent-wait 봉쇄)
                 self._social_oncoming = None
                 self._yield_block_until = (self._last_tick
@@ -1311,7 +1330,9 @@ class SafetyStopNode(Node):
         # "clear" = no hard-stop threat AND nothing approaching (TTC comfortable)
         clear = (not in_stop) and (self.min_ttc > self.slow_ttc)
         self._t_in_clear = self._t_in_clear + dt if clear else 0.0
-        # 5b: 접근자 소멸 지속 시간 (YIELD_WAIT 해제 조건)
+        # 5b: 접근자 소멸 지속 시간 (YIELD_WAIT 해제 조건) + 마지막 관측 x
+        if self._social_oncoming is not None:
+            self._yield_last_x = self._social_oncoming['x']
         self._t_yield_clear = (self._t_yield_clear + dt
                                if self._social_oncoming is None else 0.0)
 

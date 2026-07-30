@@ -307,10 +307,12 @@ def test_yield_fsm_transitions(snode):
     snode.state = State.YIELD_WAIT
     snode._t_yield_clear = YIELD_CLEAR_T + 0.1
     assert snode._next_state(False, False, True) == State.RESUME
-    # 이동 중 접근자 소멸 → NOMINAL 복귀
+    # 이동 중 접근자 소멸 → NOMINAL 복귀 (전방 소실은 3s 유예 —
+    # 2026-07-30 긍정 증거 판정: 잠깐 놓친 것으로는 복귀하지 않음)
     snode.state = State.YIELD_MOVE
     snode._social_oncoming = None
     snode._yield_target = 0.5
+    snode._t_yield_clear = 3.1
     assert snode._next_state(False, False, True) == State.NOMINAL
 
 
@@ -407,3 +409,55 @@ def test_yield_reach_with_displacement(node):
     node._yield_target = 0.05
     nxt = node._next_state(False, False, True)
     assert nxt == State.YIELD_WAIT
+
+
+# --- 통과 판정 긍정 증거 + 접근 중 워치독 연장 (2026-07-30) ---
+
+def _wait_setup(node, now):
+    from perception_avoidance.safety_stop_node import State
+    node.obs_stamp = now
+    node._last_tick = now
+    node.state = State.YIELD_WAIT
+    node._yield_wait_start = now
+    return State
+
+
+def test_front_loss_does_not_resume_quickly(node):
+    # 전방(4m)에서 래치 소실 1.5s — 통과 아님 → 대기 유지
+    now = node.get_clock().now().nanoseconds * 1e-9
+    State = _wait_setup(node, now)
+    node._social_oncoming = None
+    node._yield_last_x = 4.0
+    node._t_yield_clear = 1.5
+    assert node._next_state(False, False, True) == State.YIELD_WAIT
+
+
+def test_front_loss_resumes_after_long_absence(node):
+    now = node.get_clock().now().nanoseconds * 1e-9
+    State = _wait_setup(node, now)
+    node._social_oncoming = None
+    node._yield_last_x = 4.0
+    node._t_yield_clear = 3.5
+    assert node._next_state(False, False, True) == State.RESUME
+
+
+def test_rear_pass_resumes_fast(node):
+    # 몸 옆(0.2m)까지 왔다 소실 = 통과 → 기존 1s 유예로 복귀
+    now = node.get_clock().now().nanoseconds * 1e-9
+    State = _wait_setup(node, now)
+    node._social_oncoming = None
+    node._yield_last_x = 0.2
+    node._t_yield_clear = 1.2
+    assert node._next_state(False, False, True) == State.RESUME
+
+
+def test_watchdog_extended_while_approaching(node):
+    # 래치 생존 + 접근 중 + 대기 10s (기존 워치독 8s 초과) → 대기 유지
+    now = node.get_clock().now().nanoseconds * 1e-9
+    State = _wait_setup(node, now)
+    node.robot_vx = 0.0
+    node._social_oncoming = {'id': 'onc', 'x': 3.0, 'y': 0.0, 'vx': -0.7}
+    node._yield_last_x = 3.0
+    node._t_yield_clear = 0.0
+    node._yield_wait_start = now - 10.0
+    assert node._next_state(False, False, True) == State.YIELD_WAIT
