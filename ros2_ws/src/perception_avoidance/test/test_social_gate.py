@@ -363,3 +363,47 @@ def test_steering_off_keeps_yield(snode):
     base.linear.x = 0.5
     out = snode._apply_social(base, 1.0, _now(snode))
     assert out.linear.y == 0.0                   # 조향 주입 차단
+
+
+# --- 회전 통과 차단 + 도달 실변위 증거 (2026-07-30 결합 버그 수정) ---
+
+def test_nav_rotation_blocked_while_oncoming_latched(node):
+    node.social_steering = False
+    node._social_oncoming = {'id': 'onc', 'x': 4.0, 'y': 0.0, 'vx': -1.0}
+    assert node._pass_rot() is False
+
+
+def test_rotation_passes_without_latch(node):
+    node.social_steering = False
+    node._social_oncoming = None
+    assert node._pass_rot() is True
+
+
+def test_yield_reach_requires_real_displacement(node):
+    from perception_avoidance.safety_stop_node import State
+    now = node.get_clock().now().nanoseconds * 1e-9
+    node.obs_stamp = now
+    node._last_tick = now
+    node.state = State.YIELD_MOVE
+    node._social_oncoming = {'id': 'onc', 'x': 4.0, 'y': 0.0, 'vx': -1.0}
+    node._yield_start = now          # 시한 미도래
+    node._yield_start_y = node.robot_y
+    node._yield_need_disp = 0.35     # 시작 시 잔여 이탈 큼
+    node._yield_target = 0.05        # 요잉으로 목표가 순간 0 근처 (오판 조건)
+    nxt = node._next_state(False, False, True)
+    assert nxt == State.YIELD_MOVE   # 실변위 없음 → 도달 아님
+
+
+def test_yield_reach_with_displacement(node):
+    from perception_avoidance.safety_stop_node import State
+    now = node.get_clock().now().nanoseconds * 1e-9
+    node.obs_stamp = now
+    node._last_tick = now
+    node.state = State.YIELD_MOVE
+    node._social_oncoming = {'id': 'onc', 'x': 4.0, 'y': 0.0, 'vx': -1.0}
+    node._yield_start = now
+    node._yield_start_y = node.robot_y - 0.5   # 0.5m 실이동 완료
+    node._yield_need_disp = 0.35
+    node._yield_target = 0.05
+    nxt = node._next_state(False, False, True)
+    assert nxt == State.YIELD_WAIT

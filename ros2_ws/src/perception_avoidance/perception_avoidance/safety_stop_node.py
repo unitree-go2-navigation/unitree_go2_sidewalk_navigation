@@ -421,6 +421,8 @@ class SafetyStopNode(Node):
         self._yield_side = 0.0       # 양보 측 래치 (접근자 반대쪽)
         self._yield_target = 0.0     # 가장자리 대기 목표 (base y)
         self._yield_start = 0.0
+        self._yield_start_y = 0.0    # 양보 시작 시 월드 y (실변위 증거용)
+        self._yield_need_disp = 0.0  # 도달에 요구되는 최소 실변위
         self._t_yield_clear = 0.0
         self._yield_wait_start = 0.0
         self._yield_block_until = 0.0
@@ -1102,12 +1104,24 @@ class SafetyStopNode(Node):
             return 1.0
         return (clr - floor) / max(1e-6, (self.slow_clr - floor))
 
+    def _pass_rot(self):
+        """정지·감속 중 회전 통과 허용 여부.
+
+        원래 목적은 정적 장애물을 마주보고 교착되지 않게 몸을 트는 것.
+        nav 모드에서 대면 보행자가 래치된 동안은 차단 — MPPI의 wz가
+        '움직이는 액터 옆 빈 공간'을 계속 재조준해 머리가 액터를 쫓는
+        제자리 회전이 되고(2026-07-27 영상 분석), 그 요잉이 base 좌표계를
+        돌려 양보 도달 판정까지 오염시킨다 (결합 버그).
+        """
+        return self.pass_rotation and not (
+            not self.social_steering and self._social_oncoming is not None)
+
     def _scaled_cmd(self, s):
         # Scale translation by s; rotation passes through (turn away freely).
         out = Twist()
         out.linear.x = s * self.cmd_in.linear.x
         out.linear.y = s * self.cmd_in.linear.y
-        out.angular.z = (self.cmd_in.angular.z if self.pass_rotation
+        out.angular.z = (self.cmd_in.angular.z if self._pass_rot()
                          else s * self.cmd_in.angular.z)
         return out
 
@@ -1151,7 +1165,13 @@ class SafetyStopNode(Node):
             if (self._social_oncoming is None
                     and self._t_yield_clear >= 0.5):
                 return State.NOMINAL       # 접근자 소멸(유예 후) — 양보 불필요
-            if (abs(self._yield_target) < YIELD_REACH
+            # 도달 = 목표 근접 + 실변위 증거. 목표는 base 좌표라 로봇이
+            # 요잉하면 순간적으로 0이 되어 이동 없이 "도달" 오판 (차선
+            # 중앙 대기 → 관통 -0.44 실측). 월드 y 변위(요 무관)를 함께
+            # 요구 — 월드들의 보도 축이 x라 횡이동 = 월드 y (전제 주석).
+            moved = abs(self.robot_y - self._yield_start_y)
+            if ((abs(self._yield_target) < YIELD_REACH
+                    and moved >= self._yield_need_disp)
                     or self._last_tick - self._yield_start
                     > YIELD_MOVE_TIMEOUT):
                 return State.YIELD_WAIT
@@ -1301,6 +1321,10 @@ class SafetyStopNode(Node):
             self._resume_scale = 0.0           # ramp restarts from standstill
         if new_state == State.YIELD_MOVE and prev != State.YIELD_MOVE:
             self._yield_start = now
+            self._yield_start_y = self.robot_y
+            # 시작 시 잔여 이탈이 이미 작으면(진짜 가장자리) 변위 불요
+            self._yield_need_disp = max(0.0, min(
+                0.35, abs(self._yield_target) - YIELD_REACH))
         if new_state == State.YIELD_WAIT and prev != State.YIELD_WAIT:
             self._yield_wait_start = now
         if (prev in (State.YIELD_MOVE, State.YIELD_WAIT)
@@ -1349,12 +1373,12 @@ class SafetyStopNode(Node):
                     # 하한 0.15: CHAMP 실효 크랩 저하 중에도 도달까지 횡이동 유지
                     mag = max(0.15, min(YIELD_VY, self.lat_k * abs(err)))
                     out.linear.y = math.copysign(mag, err)
-                if self.pass_rotation:
+                if self._pass_rot():
                     out.angular.z = self.cmd_in.angular.z
             self._publish_cmd(out)
         else:  # STOP / WAIT / YIELD_WAIT — block translation, allow rotation to turn away
             out = Twist()
-            if self.pass_rotation:
+            if self._pass_rot():
                 out.angular.z = self.cmd_in.angular.z
             self._publish_cmd(out)
 
