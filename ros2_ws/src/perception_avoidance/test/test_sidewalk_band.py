@@ -19,7 +19,7 @@ def test_curb_both_sides():
     # 보도 y[-1.5, 1.5], 밖은 0.16 낮은 도로
     bin_y, g, w = make_bins()
     g[(bin_y < -1.5) | (bin_y > 1.5)] = -0.16
-    y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
+    y0, y1, *_ = find_band_edges(bin_y, g, w, ref_h=0.0)
     # 경계 = 첫 낙차 bin 중심 (bin 폭 0.2 → 연석 실위치 ±1 bin 허용)
     assert -1.75 < y0 < -1.3 and 1.3 < y1 < 1.75
 
@@ -29,7 +29,7 @@ def test_wall_north_curb_south():
     bin_y, g, w = make_bins()
     g[bin_y < -1.2] = -0.16
     w[bin_y > 2.0] = 20
-    y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
+    y0, y1, *_ = find_band_edges(bin_y, g, w, ref_h=0.0)
     assert -1.4 < y0 < -1.0 and 1.9 < y1 < 2.3
 
 
@@ -38,14 +38,14 @@ def test_occlusion_gap_stops_at_last_seen():
     bin_y, g, w = make_bins()
     g[bin_y > 1.0] = np.nan
     g[bin_y < -2.0] = -0.16
-    y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
+    y0, y1, *_ = find_band_edges(bin_y, g, w, ref_h=0.0)
     assert -2.2 < y0 < -1.8 and 0.7 < y1 < 1.3
 
 
 def test_open_range_uses_limit():
     # 경계 없음 (평지) → 탐색 한계까지 개방
     bin_y, g, w = make_bins()
-    y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
+    y0, y1, *_ = find_band_edges(bin_y, g, w, ref_h=0.0)
     assert y0 < -7.5 and y1 > 7.5
 
 
@@ -55,7 +55,7 @@ def test_nan_ref_area_tolerated():
     g[np.abs(bin_y) < 0.3] = np.nan
     g[bin_y < -3.0] = -0.2
     g[bin_y > 3.0] = -0.2
-    y0, y1 = find_band_edges(bin_y, g, w, ref_h=0.0)
+    y0, y1, *_ = find_band_edges(bin_y, g, w, ref_h=0.0)
     assert -3.3 < y0 < -2.7 and 2.7 < y1 < 3.3
 
 
@@ -98,3 +98,40 @@ def test_tracker_follows_persistent_change_rate_limited():
     for _ in range(10):
         t.update(4.0)
     assert t.v > 3.5             # 지속 신호는 결국 수렴
+
+
+# --- 연석 방향 직선 적합 (2026-07-30 요잉 대각 문제) ---
+
+from perception_avoidance.sidewalk_polygon_node import fit_band_lines
+
+
+def test_band_lines_recover_tilt():
+    # 로봇이 보도 축 대비 ~11°(기울기 0.2) 요잉한 상황의 구간별 경계
+    sx = [1.4, 3.3, 5.2, 7.1]
+    lo = [0.2 * x - 1.5 for x in sx]
+    hi = [0.2 * x + 1.5 for x in sx]
+    a, b_lo, b_hi = fit_band_lines(sx, lo, hi)
+    assert abs(a - 0.2) < 0.02
+    assert abs(b_lo + 1.5) < 0.05 and abs(b_hi - 1.5) < 0.05
+
+
+def test_band_lines_nan_slices_tolerated():
+    sx = [1.4, 3.3, 5.2, 7.1]
+    lo = [-1.5, math.nan, -1.5, math.nan]
+    hi = [math.nan, 1.5, math.nan, 1.5]
+    a, b_lo, b_hi = fit_band_lines(sx, lo, hi)
+    assert abs(a) < 0.05 and abs(b_lo + 1.5) < 0.1 and abs(b_hi - 1.5) < 0.1
+
+
+def test_band_lines_single_slice_fallback():
+    sx = [4.0]
+    a, b_lo, b_hi = fit_band_lines(sx, [-1.3], [1.3])
+    assert a == 0.0 and b_lo == -1.3 and b_hi == 1.3
+
+
+def test_band_lines_slope_clamped():
+    sx = [1.0, 7.0]
+    lo = [0.0, 6.0]     # 기울기 1.0 (비상식) → 0.6 클램프
+    hi = [3.0, 9.0]
+    a, _, _ = fit_band_lines(sx, lo, hi)
+    assert abs(a) <= 0.6

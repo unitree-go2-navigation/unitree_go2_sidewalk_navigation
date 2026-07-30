@@ -88,6 +88,36 @@ class EdgeTracker:
         return self.v
 
 
+def fit_band_lines(slice_x, lo_list, hi_list, slope_max=0.6):
+    """x 구간별 좌/우 경계 표본 → 공통 기울기 직선 (a, b_lo, b_hi).
+
+    보도 방향을 로봇 머리가 아니라 연석 자체에서 추정 (2026-07-30 —
+    요잉 시 밴드가 몸과 같이 돌아 대각으로 보이던 문제). 양측 기울기
+    평균(평행 밴드 가정) 후 절편 재산출. 표본 2개 미만이면 기울기 0
+    (기존 단일 추정 동작). NaN 표본은 측별로 제외.
+    """
+    def side_fit(vals):
+        xs = [x for x, v in zip(slice_x, vals) if not math.isnan(v)]
+        ys = [v for v in vals if not math.isnan(v)]
+        if len(xs) < 2:
+            return None, (ys[0] if ys else math.nan)
+        a, b = np.polyfit(xs, ys, 1)
+        return float(a), float(b)
+    a_lo, b_lo = side_fit(lo_list)
+    a_hi, b_hi = side_fit(hi_list)
+    slopes = [a for a in (a_lo, a_hi) if a is not None]
+    if not slopes:
+        return 0.0, b_lo, b_hi
+    a = max(-slope_max, min(slope_max, sum(slopes) / len(slopes)))
+
+    def intercept(vals):
+        pts = [(x, v) for x, v in zip(slice_x, vals) if not math.isnan(v)]
+        if not pts:
+            return math.nan
+        return sum(v - a * x for x, v in pts) / len(pts)
+    return a, intercept(lo_list), intercept(hi_list)
+
+
 def find_band_edges(bin_y, ground_h, wall_n, ref_h,
                     drop_thresh=0.10, wall_min=5, max_gap_bins=5):
     """지상 높이 프로파일에서 보도 밴드의 좌/우 경계(base y)를 찾는다.
@@ -102,26 +132,31 @@ def find_band_edges(bin_y, ground_h, wall_n, ref_h,
     c = int(np.argmin(np.abs(bin_y)))  # 로봇 정면(0) bin
 
     def scan(direction):
+        """(경계 y, 양성 검출 여부). 양성 = 연석 낙차/벽을 실제로 봄;
+        gap/범위 정지는 '모름'(보수 경계) — 방향 적합에 쓰면 안 됨
+        (희소 조각의 gap-stop이 기울기를 오염, 2026-07-30 실측)."""
         edge = bin_y[c]
         gap = 0
         i = c
         while 0 <= i < n:
             h, w = ground_h[i], wall_n[i]
             if w >= wall_min:
-                return bin_y[i]
+                return bin_y[i], True
             if math.isnan(h):
                 gap += 1
                 if gap > max_gap_bins:
-                    return edge
+                    return edge, False
             else:
                 gap = 0
                 if h < ref_h - drop_thresh:
-                    return bin_y[i]
+                    return bin_y[i], True
                 edge = bin_y[i]
             i += direction
-        return edge
+        return edge, False
 
-    return scan(-1), scan(+1)
+    lo, lo_pos = scan(-1)
+    hi, hi_pos = scan(+1)
+    return lo, hi, lo_pos, hi_pos
 
 
 class SidewalkPolygonNode(Node):
@@ -165,6 +200,7 @@ class SidewalkPolygonNode(Node):
             self.stale_hold = gp('stale_hold_s')
             self.poly_x = gp('poly_x_extent')
             self._edges = None          # (y_min, y_max) EMA
+            self._slope = 0.0           # 연석 방향 기울기 (base, EMA)
             self._last_est = None       # 마지막 유효 추정 시각 (sec)
             self.tf_buffer = tf2_ros.Buffer()
             self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -249,41 +285,82 @@ class SidewalkPolygonNode(Node):
         h = z - (a_ * pts[:, 0] + b_ * pts[:, 1] + c_)
 
         nb = int(2 * self.lat_range / self.bin_size)
-        idx = np.clip(((pts[:, 1] + self.lat_range) / self.bin_size)
-                      .astype(int), 0, nb - 1)
         bin_y = -self.lat_range + (np.arange(nb) + 0.5) * self.bin_size
-        ground_h = np.full(nb, np.nan)
-        wall_n = np.zeros(nb, dtype=int)
-
         gmask = np.abs(h) < 0.35          # 평면 대비 지면 대역
         wmask = (h > self.wall_z[0]) & (h < self.wall_z[1])
-        for b in range(nb):
-            sel = idx == b
-            gz = h[sel & gmask]
-            if gz.size >= 3:
-                ground_h[b] = float(np.median(gz))
-            wall_n[b] = int(np.count_nonzero(sel & wmask))
 
-        # 평면 보정 후 기준 높이 = 0 (평면 자체가 발밑 지면)
-        y_min, y_max = find_band_edges(
-            bin_y, ground_h, wall_n, 0.0,
-            drop_thresh=self.curb_drop, wall_min=self.wall_min)
-        if y_max - y_min < 1.0:      # 비상식적 협폭 → 노이즈 판정, 유지
-            self._publish_lidar(msg.header.stamp)
+        def edges_of(sel_slice, positive_only=True):
+            """점 부분집합(전방 x 구간)의 좌/우 경계. 표본 부족 시 NaN.
+            positive_only: 양성 검출(연석/벽 실견)만 반환 — 방향 적합용.
+            False면 gap-stop 보수 경계도 반환 — 절편 폴백용 (원거리
+            연석은 조각 표본으로 양성이 안 잡히는 w7 실측)."""
+            if np.count_nonzero(sel_slice) < 20:
+                return math.nan, math.nan
+            idx = np.clip(((pts[sel_slice, 1] + self.lat_range)
+                           / self.bin_size).astype(int), 0, nb - 1)
+            hh = h[sel_slice]
+            gm = gmask[sel_slice]
+            wm = wmask[sel_slice]
+            ground_h = np.full(nb, np.nan)
+            wall_n = np.zeros(nb, dtype=int)
+            for b in range(nb):
+                bs = idx == b
+                gz = hh[bs & gm]
+                if gz.size >= 3:
+                    ground_h[b] = float(np.median(gz))
+                wall_n[b] = int(np.count_nonzero(bs & wm))
+            # 평면 보정 후 기준 높이 = 0 (평면 자체가 발밑 지면)
+            lo, hi, lo_pos, hi_pos = find_band_edges(
+                bin_y, ground_h, wall_n, 0.0,
+                drop_thresh=self.curb_drop, wall_min=self.wall_min)
+            if positive_only:
+                return (lo if lo_pos else math.nan,
+                        hi if hi_pos else math.nan)
+            return lo, hi
+
+        # 전방 스트립을 x 구간으로 나눠 구간별 경계 → 연석 '방향' 추정
+        # (로봇 머리 기준 고정 → 요잉 시 밴드가 대각으로 도는 문제 해소)
+        x0s, x1s = self.strip_x
+        n_slice = 4
+        bounds = np.linspace(x0s, x1s, n_slice + 1)
+        slice_x, lo_l, hi_l = [], [], []
+        for i in range(n_slice):
+            sel = (pts[:, 0] >= bounds[i]) & (pts[:, 0] < bounds[i + 1])
+            lo, hi = edges_of(sel)
+            slice_x.append(0.5 * (bounds[i] + bounds[i + 1]))
+            lo_l.append(lo)
+            hi_l.append(hi)
+        a, b_lo, b_hi = fit_band_lines(slice_x, lo_l, hi_l)
+        # 양성 검출이 전무한 측은 전체 스트립 집계(보수 gap-stop 포함)로
+        # 절편 폴백 — 방향은 오염시키지 않되 폭은 유지 (w7 원거리 연석)
+        if math.isnan(b_lo) or math.isnan(b_hi):
+            all_sel = np.ones(pts.shape[0], dtype=bool)
+            lo_all, hi_all = edges_of(all_sel, positive_only=False)
+            x_c = 0.5 * (x0s + x1s)
+            if math.isnan(b_lo) and not math.isnan(lo_all):
+                b_lo = lo_all - a * x_c
+            if math.isnan(b_hi) and not math.isnan(hi_all):
+                b_hi = hi_all - a * x_c
+        if math.isnan(b_lo) or math.isnan(b_hi) or b_hi - b_lo < 1.0:
+            self._publish_lidar(msg.header.stamp)   # 표본 부족/협폭 → 유지
             return
 
         if self._edges is None:
-            self._edges = [EdgeTracker(y_min, alpha=self.alpha),
-                           EdgeTracker(y_max, alpha=self.alpha)]
+            self._edges = [EdgeTracker(b_lo, alpha=self.alpha),
+                           EdgeTracker(b_hi, alpha=self.alpha)]
+            self._slope = a
         else:
-            self._edges[0].update(y_min)
-            self._edges[1].update(y_max)
+            self._edges[0].update(b_lo)
+            self._edges[1].update(b_hi)
+            self._slope += 0.2 * (a - self._slope)   # 기울기 EMA
         self._last_est = self.get_clock().now().nanoseconds * 1e-9
         if not self._logged_first:
             self._logged_first = True
             self.get_logger().info(
-                f'lidar band first estimate: y=[{y_min:.2f}, {y_max:.2f}] '
-                f'width={y_max - y_min:.2f}m plane=({a_:.4f},{b_:.4f})')
+                f'lidar band first estimate: y=[{b_lo:.2f}, {b_hi:.2f}] '
+                f'width={b_hi - b_lo:.2f}m slope={a:.3f} '
+                f'slices lo={[round(v,2) for v in lo_l]} '
+                f'hi={[round(v,2) for v in hi_l]}')
         self._publish_lidar(msg.header.stamp)
 
     def _publish_lidar(self, stamp):
@@ -293,11 +370,15 @@ class SidewalkPolygonNode(Node):
         if self._last_est is not None and now - self._last_est > self.stale_hold:
             return                     # 오래 실패 → 발행 중단 (소비자 폴백)
         y0, y1 = self._edges[0].v, self._edges[1].v
+        a = self._slope
         x0, x1 = self.poly_x
         msg = PolygonStamped()
         msg.header.stamp = stamp
         msg.header.frame_id = 'base_link'
-        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+        # 연석 방향(기울기 a)을 따르는 평행사변형 — 요잉 시에도 실제
+        # 보도 축과 정렬 (게이트는 스트립 클리핑이라 그대로 소비 가능)
+        for x, y in ((x0, a * x0 + y0), (x1, a * x1 + y0),
+                     (x1, a * x1 + y1), (x0, a * x0 + y1)):
             msg.polygon.points.append(Point32(x=float(x), y=float(y), z=0.0))
         self.pub.publish(msg)
 
