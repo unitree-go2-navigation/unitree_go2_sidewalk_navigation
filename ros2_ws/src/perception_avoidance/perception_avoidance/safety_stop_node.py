@@ -119,7 +119,7 @@ YIELD_SCOPE_X = 10.0
 # 변위 완성 시간 이하일 때 발동 — 빠른 접근자엔 일찍, 느린 접근자엔
 # 늦게 (위험 비례). 유도: 필요 변위 0.76m / 크랩 실효 ~0.13-0.2m/s
 # ≈ 4~6s + 여유 → 7s. 접근속도 1.2면 8.4m, 0.7이면 4.9m, 0.4면 2.8m.
-YIELD_ENGAGE_T = 7.0
+YIELD_ENGAGE_T = 9.0       # 심화 목표(1.2m / 실효 0.2 ≈ 6s) + 여유
 YIELD_ENGAGE_VMIN = 0.3    # 조우 시간 분모 하한 (준정지 발산 방지)
 YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 방어)
 YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15 + 반폭)
@@ -160,6 +160,12 @@ YIELD_DIAG_MIN_ERR = 0.3   # 잔여 이탈이 이보다 크면 대각, 작으면
 # 0.1m/s로는 시간 내 미완 → 반쯤 비킨 채 대기 → 접근자가 로봇을 침
 # (actor는 회피하지 않음; min_clr -0.38 실측).
 YIELD_LANE_CLEAR = 0.76
+# nav 모드 심화 목표 (2026-07-31): 3m 보도에서 0.76 변위의 물리 여유는
+# +0.21뿐 — 변위가 조금만 미완이어도 스침 (면도날 +0.048 실측). proxemics
+# hard(0.45)까지 확보하는 이상 변위는 1.2 (= 0.45 + 로봇 실효 0.45 +
+# 사람 0.3). 크랩 0.4 상향으로 시간 내 완성 가능. 러너 모드는 기존
+# 튜닝(0.76) 보존.
+YIELD_LANE_CLEAR_NAV = 1.2
 # 접근자 진입 자격의 차선 충돌 조건: 횡거리가 이보다 크면 평행 통과
 # (측방 1.5m 자전거 등) — 양보 불필요. 래치 유지에는 미적용 (통과 중
 # 횡이동으로 벗어나는 건 정상 해제 경로가 처리).
@@ -422,6 +428,9 @@ class SafetyStopNode(Node):
         self._vx_lp = 0.0
         self._wz_lp = 0.0
         self._poly = None            # ([(x,y)...], 수신 시각)
+        self._band_cos = 1.0         # 밴드 축 단위벡터 (base) — 기본 정면
+        self._band_sin = 0.0
+        self._person_ahead = False   # 전방 보행자 후보 (회전 차단 조기화)
         self._band = None            # EMA 평활된 (y_lo, y_hi)
         self._social = None          # (target_y, speed_cap|None, 계산 시각)
         self._social_reason = ''     # 비활성 사유 (디버그: band/moving/noblock/nogap)
@@ -490,6 +499,15 @@ class SafetyStopNode(Node):
         self._vy_lp += VY_LP_ALPHA * (self.robot_vy - self._vy_lp)
         self._vx_lp += VY_LP_ALPHA * (self.robot_vx - self._vx_lp)
         self._wz_lp += VY_LP_ALPHA * (self.robot_wz - self._wz_lp)
+
+    def _corr(self, m):
+        """track을 코리도(밴드 축) 좌표로: (종방향, 횡방향, 종방향 속도).
+        축 미상이면 base 좌표 그대로 (요 0 가정과 동일)."""
+        c, sn = self._band_cos, self._band_sin
+        lon = c * m['x'] + sn * m['y']
+        lat = -sn * m['x'] + c * m['y']
+        vlon = c * m.get('vx', 0.0) + sn * m.get('vy', 0.0)
+        return lon, lat, vlon
 
     def poly_cb(self, msg: PolygonStamped):
         self._poly = ([(p.x, p.y) for p in msg.polygon.points],
@@ -747,6 +765,20 @@ class SafetyStopNode(Node):
         band = None
         if self._poly is not None and now - self._poly[1] <= POLY_TIMEOUT:
             band = lateral_band(self._poly[0], 0.0, SOCIAL_BAND_X)
+            # 밴드 축 각 (polygon 첫 변 = 복도 방향, v3 계약): 요잉 시
+            # base 좌표 판정(|y|<0.8 등)이 5m 앞 액터를 2.5m 옆으로
+            # 오인해 래치가 죽는 것 방지 (7/31 영상 3건 실측 — 조우 중
+            # 몸 기울기 30~45°에서 양보 전멸)
+            pp = self._poly[0]
+            if len(pp) >= 2:
+                ax = pp[1][0] - pp[0][0]
+                ay = pp[1][1] - pp[0][1]
+                n = math.hypot(ax, ay)
+                if n > 1e-6:
+                    c, sn = ax / n, ay / n
+                    if c < 0.0:      # 무방향 축 — 로봇 전방으로 부호 정렬
+                        c, sn = -c, -sn
+                    self._band_cos, self._band_sin = c, sn
         # sanity 가드: 밴드는 로봇(y=0)을 포함해야 한다 — 아니면 polygon이
         # 좌표계 오류/드리프트로 깨진 것 (스폰 이중 계상 사고 실측, 2026-07-22).
         # 깨진 밴드로 gap을 고르면 보도 밖 목표로 조향하므로 비활성이 안전.
@@ -774,10 +806,11 @@ class SafetyStopNode(Node):
         # 통과(후방 이탈)·소실 시 해제. 밴드 밖 수목·밴드 내 노이즈(최대
         # -0.34 실측)는 재래치 불가.
         def _in_scope(m):
-            return (m['x'] + 0.5 * m['sx'] > 0.0
-                    and m['x'] - 0.5 * m['sx'] < YIELD_SCOPE_X
-                    and m['y'] + 0.5 * m['sy'] > self._band[0]
-                    and m['y'] - 0.5 * m['sy'] < self._band[1])
+            lon, lat, _ = self._corr(m)
+            return (lon + 0.5 * m['sx'] > 0.0
+                    and lon - 0.5 * m['sx'] < YIELD_SCOPE_X
+                    and lat + 0.5 * m['sy'] > self._band[0]
+                    and lat - 0.5 * m['sy'] < self._band[1])
         prev = self._social_oncoming
         cur = None
         if prev is not None:
@@ -791,9 +824,9 @@ class SafetyStopNode(Node):
                     # 대기 (final 게이트 RESUME 미진입 2/5 실측)
                     if (abs(m2['x'] - prev['x']) < 1.5
                             and abs(m2['y'] - prev['y']) < 1.0
-                            and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
+                            and YIELD_APPROACH_VX_MIN < self._corr(m2)[2]
                             < YIELD_APPROACH_VX
-                            and m2.get('vx', 0.0) + max(self.robot_vx, 0.0)
+                            and self._corr(m2)[2] + max(self.robot_vx, 0.0)
                             < YIELD_GROUND_APPROACH
                             and _in_scope(m2)):
                         cur = dict(m2, id=tid2)
@@ -801,17 +834,25 @@ class SafetyStopNode(Node):
         if cur is None and now >= self._yield_block_until:
             for tid2, m2 in self._social_mem.items():
                 if (m2['kind'] == 'person_moving'
-                        and YIELD_APPROACH_VX_MIN < m2.get('vx', 0.0)
+                        and YIELD_APPROACH_VX_MIN < self._corr(m2)[2]
                         < YIELD_APPROACH_VX
-                        and m2.get('vx', 0.0) + max(self.robot_vx, 0.0)
+                        and self._corr(m2)[2] + max(self.robot_vx, 0.0)
                         < YIELD_GROUND_APPROACH
                         and self._person_hist.get(tid2, {}).get('app', 0)
                         >= YIELD_APP_FRAMES
-                        and abs(m2['y']) < YIELD_LANE_CONFLICT
+                        and abs(self._corr(m2)[1]) < YIELD_LANE_CONFLICT
                         and _in_scope(m2)):
                     cur = dict(m2, id=tid2)
                     break
         self._social_oncoming = cur
+        # 전방 보행자 후보 (래치 전 단계) — nav 모드 회전 차단 조기화용:
+        # MPPI가 액터 옆 빈틈으로 미리 요잉하면 래치 기하가 죽는 경주
+        # (7/31 영상) 차단. 코리도 좌표로 판정.
+        self._person_ahead = any(
+            m.get('kind') in ('person', 'person_moving')
+            and 0.0 < self._corr(m)[0] < YIELD_SCOPE_X
+            and abs(self._corr(m)[1]) < 1.5
+            for m in self._social_mem.values())
 
         # 이동 보행자 베토는 두지 않는다 — '창 안 mover 존재 시 레이어 거부'
         # 설계는 초소형 파편·슬라이딩 청크의 모든 노이즈 모드를 거부로 증폭
@@ -975,9 +1016,9 @@ class SafetyStopNode(Node):
         (nav 검증 실측: 횡 이탈 0, clr -0.53).
         """
         if not self.social_steering and self._social_oncoming is not None:
-            m = self._social_oncoming
-            closing = max(YIELD_ENGAGE_VMIN, -m.get('vx', 0.0))
-            if m['x'] / closing <= YIELD_ENGAGE_T:
+            lon, _, vlon = self._corr(self._social_oncoming)
+            closing = max(YIELD_ENGAGE_VMIN, -vlon)
+            if lon / closing <= YIELD_ENGAGE_T:
                 no_gap = True
         if self._social_oncoming is None:
             self._yield_frames = 0
@@ -1018,7 +1059,9 @@ class SafetyStopNode(Node):
         # 보행자와 8cm 스침을 만든다 (social_yield 실측). 밴드 이격 클램프.
         oy = self._social_oncoming['y']
         sd = self._yield_side
-        tgt = oy + sd * YIELD_LANE_CLEAR
+        depth = (YIELD_LANE_CLEAR if self.social_steering
+                 else YIELD_LANE_CLEAR_NAV)
+        tgt = oy + sd * depth
         for m in self._social_mem.values():
             if (m['kind'] in ('person', 'person_moving')
                     and 0.0 < m['x'] < YIELD_SCOPE_X
@@ -1131,7 +1174,8 @@ class SafetyStopNode(Node):
         돌려 양보 도달 판정까지 오염시킨다 (결합 버그).
         """
         return self.pass_rotation and not (
-            not self.social_steering and self._social_oncoming is not None)
+            not self.social_steering
+            and (self._social_oncoming is not None or self._person_ahead))
 
     def _scaled_cmd(self, s):
         # Scale translation by s; rotation passes through (turn away freely).

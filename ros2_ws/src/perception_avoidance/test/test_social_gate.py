@@ -482,3 +482,24 @@ def test_engage_time_based_near_slow(node):
     node._yield_frames = 0
     node._update_yield(no_gap=False)
     assert node._yield_frames == 0
+
+
+# --- 코리도 좌표 래치 (요 불변) + 접근 국면 회전 차단 (2026-07-31) ---
+
+def test_corr_frame_recovers_on_corridor_actor(node):
+    # 몸이 30° 틀어진 상황: 복도 정면 5m 액터가 base로는 (4.33, 2.5)
+    # — base |y|=2.5는 차선 충돌(0.8) 탈락이지만 코리도 횡방향은 0
+    node._band_cos = math.cos(0.5236)
+    node._band_sin = math.sin(0.5236)
+    m = {'x': 5 * math.cos(0.5236), 'y': 5 * math.sin(0.5236),
+         'vx': -1.0 * math.cos(0.5236), 'vy': -1.0 * math.sin(0.5236)}
+    lon, lat, vlon = node._corr(m)
+    assert abs(lon - 5.0) < 1e-6 and abs(lat) < 1e-6
+    assert abs(vlon + 1.0) < 1e-6      # 종방향 접근 속도 복원
+
+
+def test_rotation_blocked_by_person_ahead_prelatch(node):
+    node.social_steering = False
+    node._social_oncoming = None
+    node._person_ahead = True          # 래치 전이라도 전방 보행자 → 차단
+    assert node._pass_rot() is False
