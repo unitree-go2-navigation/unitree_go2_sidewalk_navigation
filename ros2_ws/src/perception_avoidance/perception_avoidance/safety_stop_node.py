@@ -122,7 +122,10 @@ YIELD_SCOPE_X = 10.0
 YIELD_ENGAGE_T = 9.0       # 심화 목표(1.2m / 실효 0.2 ≈ 6s) + 여유
 YIELD_ENGAGE_VMIN = 0.3    # 조우 시간 분모 하한 (준정지 발산 방지)
 YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 방어)
-YIELD_EDGE_OFF = 0.30      # 대기 중심의 밴드 경계 이격 (연석 ~0.15 + 반폭)
+# 0.50 (0.30→, 2026-07-31): 다리 스윙 실효 반폭 0.45 + 여유 — 0.30은 몸
+# 중심이 경계-0.30까지 가면 발이 연석 밖을 밟아 도로로 구름 (육안 1회 +
+# 배치 10회 중 1회 위험선 침범 실측). 심화 목표(1.2)의 필수 동반 수정.
+YIELD_EDGE_OFF = 0.50
 YIELD_REACH = 0.12         # 가장자리 도달 판정 오차 (m)
 YIELD_MOVE_TIMEOUT = 10.0  # 이동 시한 초과 → 그 자리 대기 (배회 방지 백스톱)
 YIELD_CLEAR_T = 1.0        # 후방 통과 후 소멸 지속 → RESUME
@@ -413,6 +416,8 @@ class SafetyStopNode(Node):
         self.robot_wz = 0.0
         self.robot_x = 0.0
         self.robot_y = 0.0
+        self.robot_yaw = 0.0
+        self._yield_wy = None        # 양보 목표 앵커 (월드 y, 단조 심화 전용)
         self.obs_stamp = None
         self.min_clearance = math.inf
         self.min_ttc = math.inf
@@ -491,6 +496,9 @@ class SafetyStopNode(Node):
         self.robot_wz = msg.twist.twist.angular.z
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
+        q = msg.pose.pose.orientation
+        self.robot_yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                                    1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         # 자기운동 저역통과: gait sway(~2.5Hz, vx·vy ±0.2, wz ±0.2)가 실리므로
         # 명령성 성분만 추출 — blind-hold 지상 vy 보정과 소셜 지상 속도 판정에
         # 사용 (즉시값이 그대로 들어가면 정지물이 0.3 문턱을 넘나들어 보행
@@ -1070,9 +1078,31 @@ class SafetyStopNode(Node):
                 if abs(deeper) > abs(tgt):
                     tgt = deeper
         if sd < 0:
-            self._yield_target = max(self._band[0] + YIELD_EDGE_OFF, tgt)
+            tgt = max(self._band[0] + YIELD_EDGE_OFF, tgt)
         else:
-            self._yield_target = min(self._band[1] - YIELD_EDGE_OFF, tgt)
+            tgt = min(self._band[1] - YIELD_EDGE_OFF, tgt)
+        # 목표 단조화 (2026-07-31): 후보(tgt)는 액터의 현재 횡위치 기준이라
+        # 클러스터 중심이 팔다리 스윙으로 ±0.2~0.3 출렁이면 목표가 따라
+        # 출렁 → 로봇이 왕복 (44/22cm 역행 실측, 영상 케이스3 = 스윙-복귀-
+        # 재스윙 후 미완 변위 충돌). 월드 y 앵커에 '깊어지는 방향만' 병합.
+        cw = math.cos(self.robot_yaw)
+        if abs(cw) > 0.5:                    # 복도≈월드 x 전제 (문서화됨)
+            cand_wy = self.robot_y + cw * tgt
+            side_w = cw * sd                 # 월드 기준 심화 방향
+            if self._yield_wy is None:
+                self._yield_wy = cand_wy
+            elif side_w > 0:
+                self._yield_wy = max(self._yield_wy, cand_wy)
+            else:
+                self._yield_wy = min(self._yield_wy, cand_wy)
+            tgt = (self._yield_wy - self.robot_y) / cw
+            # 밴드 갱신 대비 재클램프 (앵커도 함께 당김)
+            if sd < 0:
+                tgt = max(self._band[0] + YIELD_EDGE_OFF, tgt)
+            else:
+                tgt = min(self._band[1] - YIELD_EDGE_OFF, tgt)
+            self._yield_wy = self.robot_y + cw * tgt
+        self._yield_target = tgt
         self._yield_frames = min(self._yield_frames + 1, YIELD_TRIG_FRAMES)
         self._yield_req = self._yield_frames >= YIELD_TRIG_FRAMES
 
@@ -1405,6 +1435,7 @@ class SafetyStopNode(Node):
         if (prev in (State.YIELD_MOVE, State.YIELD_WAIT)
                 and new_state not in (State.YIELD_MOVE, State.YIELD_WAIT)):
             self._yield_side = 0.0         # 양보 종료 — 측 래치 해제
+            self._yield_wy = None          # 목표 앵커 해제
             self._recenter_until = now + RECENTER_T
         self._set_state(new_state)
 

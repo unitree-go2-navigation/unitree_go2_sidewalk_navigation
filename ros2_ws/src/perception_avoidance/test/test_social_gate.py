@@ -503,3 +503,46 @@ def test_rotation_blocked_by_person_ahead_prelatch(node):
     node._social_oncoming = None
     node._person_ahead = True          # 래치 전이라도 전방 보행자 → 차단
     assert node._pass_rot() is False
+
+
+# --- 양보 목표 단조화 (2026-07-31 목표 추적 왕복 수정) ---
+
+def _anchor_setup(node):
+    node.robot_yaw = 0.0
+    node.robot_y = 5.2
+    node._band = (-1.5, 1.5)
+    node._yield_side = 1.0
+    node.social_steering = False
+    node._yield_wy = None
+
+
+def test_yield_target_ignores_actor_wobble(node):
+    # 액터 횡위치가 ±0.3 출렁여도 목표는 얕아지지 않음 (단조 심화)
+    _anchor_setup(node)
+    node._social_oncoming = {'id': 'o', 'x': 4.0, 'y': 0.0, 'vx': -1.0,
+                             'kind': 'person_moving', 'sx': 0.4, 'sy': 0.4}
+    node._update_yield(True)
+    t1 = node._yield_target
+    node._social_oncoming = dict(node._social_oncoming, y=-0.3)  # 출렁(얕아지는 쪽)
+    node._update_yield(True)
+    assert node._yield_target >= t1 - 1e-6      # 얕아지지 않음
+
+
+def test_yield_target_deepens_monotonically(node):
+    _anchor_setup(node)
+    node._social_oncoming = {'id': 'o', 'x': 4.0, 'y': 0.0, 'vx': -1.0,
+                             'kind': 'person_moving', 'sx': 0.4, 'sy': 0.4}
+    node._update_yield(True)
+    t1 = node._yield_target
+    node._social_oncoming = dict(node._social_oncoming, y=0.3)   # 깊어지는 쪽
+    node._update_yield(True)
+    assert node._yield_target >= t1              # 심화는 허용
+
+
+def test_yield_target_clamped_by_leg_safe_edge(node):
+    # 목표가 어떤 경우에도 밴드 경계 - 0.50(다리 반폭) 안쪽
+    _anchor_setup(node)
+    node._social_oncoming = {'id': 'o', 'x': 4.0, 'y': 0.5, 'vx': -1.0,
+                             'kind': 'person_moving', 'sx': 0.4, 'sy': 0.4}
+    node._update_yield(True)
+    assert node._yield_target <= 1.5 - 0.50 + 1e-6
