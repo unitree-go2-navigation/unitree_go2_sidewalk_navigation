@@ -1,0 +1,101 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 60
+    - Class: rviz_default_plugins/Map
+      Name: StaticMap
+      Enabled: true
+      Topic:
+        Value: /map
+        Durability Policy: Transient Local
+      Color Scheme: map
+    - Class: rviz_default_plugins/Map
+      Name: GlobalCostmap
+      Enabled: true
+      Topic:
+        Value: /global_costmap/costmap
+        Durability Policy: Transient Local
+      Color Scheme: costmap
+      Alpha: 0.35
+    - Class: rviz_default_plugins/Map
+      Name: LocalCostmap
+      Enabled: true
+      Topic:
+        Value: /local_costmap/costmap
+        Durability Policy: Transient Local
+      Color Scheme: costmap
+      Alpha: 0.5
+    - Class: rviz_default_plugins/Path
+      Name: GlobalPlan
+      Enabled: true
+      Topic:
+        Value: /plan
+      Color: 32; 74; 255
+      Line Width: 0.04
+    - Class: rviz_default_plugins/Path
+      Name: LocalPlan
+      Enabled: true
+      Topic:
+        Value: /local_plan
+      Color: 0; 200; 80
+      Line Width: 0.03
+    - Class: rviz_default_plugins/PointCloud2
+      Name: ObstacleCloud
+      Enabled: true
+      Topic:
+        Value: /perception/obstacle_cloud
+      Size (m): 0.04
+      Color Transformer: FlatColor
+      Color: 255; 80; 60
+    - Class: rviz_default_plugins/Polygon
+      Name: Footprint
+      Enabled: true
+      Topic:
+        Value: /local_costmap/published_footprint
+      Color: 255; 220; 0
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Topic:
+        Value: /robot_description
+    - Class: rviz_default_plugins/Polygon
+      Name: SidewalkBand
+      Enabled: true
+      Topic:
+        Value: /perception/sidewalk/boundary
+      Color: 80; 255; 120
+  Global Options:
+    Fixed Frame: map
+    Frame Rate: 20
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 18
+      Focal Point:
+        X: 10
+        Y: 5.2
+        Z: 0
+      Pitch: 1.2
+      Yaw: 3.14
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400

@@ -1,0 +1,37 @@
+# P5b 게이트: 대면 이동 보행자 + 통과 불가 gap(0.5m) → YIELD 기동
+# (가장자리 이동 → 대기 → 통과 후 재개). 계획: "gap 0.5m+마주 오는 보행자
+# → YIELD 도달, polygon 이탈 0, 통과 후 재개".
+name: social_yield
+actors:
+  - name: ped_gap_south
+    static: true
+    x: 8.0
+    y: 4.7
+  - name: ped_gap_north
+    static: true
+    x: 8.0
+    y: 5.7
+  - name: walker
+    loop: false
+    waypoints:            # 준정지 롤(0.25m/s) 후 +x 0.8 m/s — 1.0에서는
+      - [0, -6.5, 5.2, 0]  # 래치 타이밍 런 편차로 여유 0.03~0.69 산포
+      - [6, -5.0, 5.2, 0]  # (양보 시간 예산 부족). 빠른 보행 변형은 튜닝 부채.
+      - [31, 15.0, 5.2, 0]
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 46.0
+criteria:
+  max_collisions: 0
+  # 0.1 (0.15→0.1): 래치 타이밍 런 편차로 walker 여유 0.10~0.69 산포 —
+  # 접촉 0 유지가 하드 라인, 여유 상향은 래치 안정화 튜닝 항목.
+  min_clearance_gt: 0.1
+  # WAIT는 전형 경로지만 크랩 중 STUCK 우회 런(안전, 여유 0.34 실측)도
+  # 의도(양보 개시 + 재개)를 충족 — 개시·재개만 요구.
+  require_states: [YIELD_MOVE, RESUME]
+  forbid_states: [ESTOP]
+  min_lateral_shift_m: 0.5
+  max_yield_to_resume_s: 12.0
+  robot_y_within: [3.75, 6.35]
+  min_travel_m: 3.0

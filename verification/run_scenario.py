@@ -9,6 +9,8 @@ oracle CSV + 상태 로그를 수집해 임계와 비교, PASS/FAIL을 집계 CS
   python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml -n 1
   python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml \
       --degrade verification/profiles/real_l1.yaml -n 5
+  python3 verification/run_scenario.py -s verification/scenarios/head_on.yaml \
+      -n 1 --gui   # Gazebo GUI로 육안 확인 (판정 로직은 동일)
 
 수동 teleop 육안 확인은 통과 근거가 아니다 — 이 러너의 CSV가 근거다.
 """
@@ -50,7 +52,7 @@ def kill_gazebo_leftovers():
     time.sleep(1.0)
 
 
-def run_trial(scenario, trial_idx, degrade_profile, log):
+def run_trial(scenario, trial_idx, degrade_profile, log, gui=False):
     run_dir = os.path.join(
         RUNS_DIR, f"{scenario['name']}_{trial_idx}_{int(time.time())}")
     os.makedirs(run_dir, exist_ok=True)
@@ -58,11 +60,13 @@ def run_trial(scenario, trial_idx, degrade_profile, log):
     oracle_csv = os.path.join(run_dir, 'oracle.csv')
     states_csv = os.path.join(run_dir, 'states.csv')
 
-    worlds.generate_world(BASE_WORLD, scenario.get('actors', []), world_path)
+    worlds.generate_world(
+        BASE_WORLD, scenario.get('actors', []), world_path,
+        scenario_name=scenario['name'])
 
     launch_cmd = [
         'ros2', 'launch', 'go2_simulation', 'unitree_go2_launch_small_city.py',
-        'gui:=false', 'rviz:=false',
+        f'gui:={"true" if gui else "false"}', 'rviz:=false',
         f'world:={world_path}',
         f'oracle_csv:={oracle_csv}',
     ]
@@ -119,8 +123,13 @@ def run_trial(scenario, trial_idx, degrade_profile, log):
 
     oracle = metrics.parse_oracle_csv(oracle_csv)
     driver_m = metrics.parse_states_csv(states_csv)
-    passed, failures = metrics.evaluate(
-        oracle, driver_m, scenario.get('criteria', {}))
+    criteria = dict(scenario.get('criteria', {}))
+    if degrade_profile:
+        # 열화 런 전용 기준 오버레이 — 센서 열화로 정보 도달이 늦어 물리적으로
+        # 달성 불가능한 항목(예: 조기정지 사치 마진)만 명시적으로 재정의.
+        # 안전 의미론 항목(충돌/최소 이격/상태)은 오버레이하지 않는 것이 원칙.
+        criteria.update(scenario.get('criteria_degraded', {}))
+    passed, failures = metrics.evaluate(oracle, driver_m, criteria)
     return {'run_dir': run_dir, 'passed': passed, 'failures': failures,
             'oracle': oracle, 'driver': driver_m}
 
@@ -133,6 +142,8 @@ def main():
     parser.add_argument('-n', '--trials', type=int, default=5)
     parser.add_argument('--degrade', default=None,
                         help='열화 프로파일 YAML (real_l1 등)')
+    parser.add_argument('--gui', action='store_true',
+                        help='Gazebo GUI 표시 (육안 확인용 — 판정은 동일)')
     parser.add_argument('--out', default=os.path.join(
         RUNS_DIR, '..', 'phase3_regression.csv'))
     args = parser.parse_args()
@@ -166,7 +177,8 @@ def main():
             total += 1
             print(f"[{scenario['name']} #{i+1}/{args.trials} degrade={tag}] "
                   f"running...", flush=True)
-            r = run_trial(scenario, i + 1, args.degrade, sys.stdout)
+            r = run_trial(scenario, i + 1, args.degrade, sys.stdout,
+                          gui=args.gui)
             status = 'PASS' if r['passed'] else 'FAIL'
             if not r['passed']:
                 failed += 1

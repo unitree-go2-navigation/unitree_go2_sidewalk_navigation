@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<robot>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- Gazebo Sim plugins -->
   <gazebo>
     <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
@@ -119,6 +119,11 @@
       <topic>rgb_image</topic>
     </sensor>
   </gazebo>-->
+  <!-- 카메라 토글: GPU 렌더 부하 (rgbd depth+RGB + 720p color ≈ 45렌더/s).
+       RTF 1.0 환경(small_city_test)에서 L1 라이다를 기아 상태로 만들어
+       (10Hz→2.7Hz, 게이트 sensor_timeout) nav 실험은 OFF 권장. -->
+  <xacro:arg name="cameras_enabled" default="true"/>
+  <xacro:if value="$(arg cameras_enabled)">
   <!-- RealSense D435i RGBD Camera + IMU (실제 하드웨어 매칭) -->
   <gazebo reference="camera_link">
     <sensor name="rgbd_camera" type="rgbd_camera">
@@ -130,7 +135,10 @@
       <gz_frame_id>camera_link</gz_frame_id>
 
       <camera>
-        <!-- D435i RGB: hfov ~87 deg = 1.518 rad -->
+        <!-- D435i depth FOV: 87°×58° = 1.518 rad. rgbd_camera는 RGB/depth가
+             이 블록을 공유하므로 여기 스펙은 depth 기준으로 둔다 (points를
+             P6 지면 장애물이 소비 예정 — FOV/해상도 변경 금지). 고화질
+             RGB는 아래 별도 d435i_color 센서(실물도 이미저 분리). -->
         <horizontal_fov>1.518</horizontal_fov>
 
         <image>
@@ -149,6 +157,31 @@
         <clip>
           <near>0.05</near>
           <far>20.0</far>
+        </clip>
+      </camera>
+    </sensor>
+
+    <!-- D435i RGB 이미저 (분리 모델링): 실물 스펙 69°×42°, 최대 1920×1080.
+         시뮬은 1280×720@15Hz — 데모 POV 화질용 (스택 소비자 없음, 거리/TTC는
+         LiDAR 단독 원칙). 기존 /d435i/* 토픽(팀원 depth 계약)은 불변. -->
+    <sensor name="d435i_color" type="camera">
+      <pose>0 0 0 0 0 0</pose>
+      <update_rate>15</update_rate>
+      <always_on>1</always_on>
+      <visualize>0</visualize>
+      <topic>d435i/color/image</topic>
+      <gz_frame_id>camera_link</gz_frame_id>
+      <camera>
+        <!-- 69 deg = 1.204 rad -->
+        <horizontal_fov>1.204</horizontal_fov>
+        <image>
+          <width>1280</width>
+          <height>720</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>200.0</far>
         </clip>
       </camera>
     </sensor>
@@ -173,6 +206,7 @@
       </imu>
     </sensor>
   </gazebo>
+  </xacro:if>
 
   <!-- Main body -->
   <gazebo reference="trunk">

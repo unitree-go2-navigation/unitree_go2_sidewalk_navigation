@@ -3,9 +3,14 @@
 기본 월드(커밋본)를 그대로 두고 actor/정적 보행자만 갈아끼운 변형 SDF를
 생성한다. 5.5k줄 월드 사본을 커밋하지 않기 위한 결정적(문자열 치환) 생성.
 
-actor 명세:
+actor / 이동 모델 명세:
   {name, waypoints: [[t, x, y, yaw], ...], loop: bool}          # 이동 보행자
   {name, static: true, x, y}                                    # 정지 보행자
+  {name, box: true, x, y, size: [sx, sy, sz]}                   # 정적 박스 (스퀴즈)
+
+시나리오 이름에 ``bike``가 포함되면 이동 개체를 skeletal actor 대신
+``midday_ride`` GLB visual + WaypointMover 모델로 생성한다. 일반 보행자
+시나리오는 기존 actor 경로를 그대로 사용한다.
 
 ⚠ gz <actor>는 headless(-s) 센서 렌더링과 같이 쓸 때 함정이 4개 있다
 (2026-07-09~10 디버깅 — ACTOR_TEMPLATE 위 주석 참조). 특히 <loop>false</loop>는
@@ -13,8 +18,8 @@ sim 루프를 wedge시키므로(전 토픽/서비스 무응답) 템플릿은 항
 내보내고, "이동 후 정지"는 준정지 hold 세그먼트로 표현한다.
 퇴화 궤적 가드(사용자 세그먼트 이동거리 < 0.05m 또는 속도 < 0.02 m/s 거부)는
 방어적으로 유지 — 정지는 static: true가 올바른 표현이다.
-정지 보행자 모델은 plugin <model_name> 주입으로, 이동 보행자(actor)는
-oracle이 자동으로 추적한다.
+정지 보행자와 bike 이동 모델은 plugin <model_name> 주입으로, 일반
+이동 보행자(actor)는 oracle이 자동으로 추적한다.
 """
 
 import math
@@ -52,22 +57,67 @@ WAYPOINT_TEMPLATE = """          <waypoint>
             <pose>{x} {y} 1.15 0 0 {yaw}</pose>
           </waypoint>"""
 
+# bike 시나리오: 정적 GLB visual을 model-scoped WaypointMover로 이동한다.
+# GLB의 Y-up을 Gazebo Z-up으로 바꾸는 roll +90deg 뒤, Blender 원본의 전방
+# -Y를 +X로 맞추는 yaw +90deg를 적용한다. 메시 바닥 Z=0을 인도면 0.16m에
+# 두므로 waypoint yaw=0인 bike는 +X로 달려 yaw=pi인 Go2와 마주 본다.
+BIKE_WAYPOINT_TEMPLATE = """        <waypoint>{t} {x} {y} {yaw}</waypoint>"""
+
+BIKE_MODEL_TEMPLATE = """    <model name="{name}">
+      <static>true</static>
+      <pose>{x0} {y0} 0.16 0 0 {yaw0}</pose>
+      <link name="body">
+        <visual name="visual">
+          <pose>0 0 0 1.57079632679 0 1.57079632679</pose>
+          <geometry>
+            <mesh>
+              <uri>model://midday_ride/meshes/midday_ride_gazebo.glb</uri>
+            </mesh>
+          </geometry>
+        </visual>
+      </link>
+      <plugin filename="WaypointMover" name="go2_simulation::WaypointMover">
+        <z>0.16</z>
+        <loop>{loop}</loop>
+{waypoints}
+      </plugin>
+    </model>
+"""
+
 # 준정지 hold: 관측 창보다 훨씬 긴 주기로 미세 이동 → 사실상 그 자리에 정지.
 # (제자리 0거리 세그먼트 대신 미세 이동을 쓰는 것은 방어적 선택)
 HOLD_DIST = 0.06      # m
 HOLD_DURATION = 9999  # s
 
-# 정지 보행자: 사람 크기 실린더 (r=0.3, h=1.7). 실린더 중심 z = 인도면(0.16)+0.85.
+# 정지 보행자: 서 있는 사람 메시 (MaleVisitorOnPhone, 키 1.74m, 발 = 메시 원점).
+# 라이다(GPU)는 visual을 보므로 사람 형태 그대로 감지된다. 충돌은 oracle의
+# actor_radius(0.3)와 일치하는 실린더 유지. 모델 pose z = 인도면(0.16).
 STATIC_PED_TEMPLATE = """    <model name="{name}">
       <static>true</static>
-      <pose>{x} {y} 1.01 0 0 0</pose>
+      <pose>{x} {y} 0.16 0 0 0</pose>
       <link name="body">
         <visual name="visual">
-          <geometry><cylinder><radius>0.3</radius><length>1.7</length></cylinder></geometry>
-          <material><ambient>0.2 0.7 0.2 1</ambient><diffuse>0.2 0.7 0.2 1</diffuse></material>
+          <geometry><mesh><uri>model://MaleVisitorOnPhone/meshes/MaleVisitorStatic.obj</uri></mesh></geometry>
         </visual>
         <collision name="collision">
+          <pose>0 0 0.85 0 0 0</pose>
           <geometry><cylinder><radius>0.3</radius><length>1.7</length></cylinder></geometry>
+        </collision>
+      </link>
+    </model>
+"""
+
+BOX_TEMPLATE = """    <model name="{name}">
+      <static>true</static>
+      <pose>{x} {y} {z} 0 0 0</pose>
+      <link name="body">
+        <visual name="visual">
+          <geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
+          <material><ambient>0.6 0.45 0.3 1</ambient>
+            <diffuse>0.6 0.45 0.3 1</diffuse></material>
+        </visual>
+        <collision name="collision">
+          <geometry><box><size>{sx} {sy} {sz}</size></box></geometry>
         </collision>
       </link>
     </model>
@@ -113,12 +163,34 @@ def moving_ped_xml(spec):
     return ACTOR_TEMPLATE.format(name=spec['name'], waypoints=waypoint_xml)
 
 
+def moving_bike_xml(spec):
+    """Render a bike scenario mover as the exported cyclist GLB model."""
+    validate_waypoints(spec['name'], spec['waypoints'])
+    waypoints = list(spec['waypoints'])
+    waypoint_xml = '\n'.join(
+        BIKE_WAYPOINT_TEMPLATE.format(t=w[0], x=w[1], y=w[2], yaw=w[3])
+        for w in waypoints)
+    x0, y0, yaw0 = waypoints[0][1], waypoints[0][2], waypoints[0][3]
+    return BIKE_MODEL_TEMPLATE.format(
+        name=spec['name'], x0=x0, y0=y0, yaw0=yaw0,
+        loop=str(bool(spec.get('loop', False))).lower(),
+        waypoints=waypoint_xml)
+
+
 def static_ped_xml(spec):
     return STATIC_PED_TEMPLATE.format(
         name=spec['name'], x=spec['x'], y=spec['y'])
 
 
-def generate_world(base_sdf_path, actors, out_path):
+def box_xml(spec):
+    sx, sy, sz = spec.get('size', [0.4, 0.4, 1.0])
+    # 보도 상판(z=0.16) 위에 올려놓는다
+    return BOX_TEMPLATE.format(
+        name=spec['name'], x=spec['x'], y=spec['y'],
+        z=0.16 + 0.5 * sz, sx=sx, sy=sy, sz=sz)
+
+
+def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
 
@@ -126,26 +198,33 @@ def generate_world(base_sdf_path, actors, out_path):
     sdf = ACTOR_BLOCK_RE.sub('', sdf)
 
     insert = ''
-    static_names = []
+    tracked_model_names = []
+    is_bike_scenario = 'bike' in scenario_name.lower()
     for spec in actors:
-        if spec.get('static'):
+        if spec.get('box'):
+            insert += box_xml(spec)
+            tracked_model_names.append(spec['name'])
+        elif spec.get('static'):
             insert += static_ped_xml(spec)
-            static_names.append(spec['name'])
+            tracked_model_names.append(spec['name'])
+        elif is_bike_scenario:
+            insert += moving_bike_xml(spec)
+            tracked_model_names.append(spec['name'])
         else:
             insert += moving_ped_xml(spec)   # actor는 oracle이 자동 추적
 
     idx = sdf.rindex('</world>')
     sdf = sdf[:idx] + insert + sdf[idx:]
 
-    # 정지 보행자 모델을 oracle이 추적하도록 plugin에 <model_name> 주입
-    if static_names:
+    # actor가 아닌 model 기반 개체를 oracle이 추적하도록 이름을 주입
+    if tracked_model_names:
         m = re.search(
             r'(<plugin[^>]*ActorPosePublisher.*?)(\n[ \t]*</plugin>)',
             sdf, re.DOTALL)
         if not m:
             raise ValueError('ActorPosePublisher plugin block not found in base world')
         extra = ''.join(
-            f'\n      <model_name>{n}</model_name>' for n in static_names)
+            f'\n      <model_name>{n}</model_name>' for n in tracked_model_names)
         sdf = sdf[:m.end(1)] + extra + sdf[m.end(1):]
 
     with open(out_path, 'w') as f:

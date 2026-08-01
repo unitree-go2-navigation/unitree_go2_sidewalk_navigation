@@ -13,6 +13,8 @@ setup(
         ('share/' + package_name + '/config', [
             'config/safety_stop.yaml',
             'config/self_filter.yaml',
+            'config/sidewalk_polygon.yaml',
+            'config/params_ledger.yaml',
         ]),
     ],
     install_requires=['setuptools'],
@@ -28,6 +30,7 @@ setup(
             'lidar_obstacle_node = perception_avoidance.lidar_obstacle_node:main',
             'safety_stop_node = perception_avoidance.safety_stop_node:main',
             'degrade_pointcloud_node = perception_avoidance.degrade_pointcloud_node:main',
+            'sidewalk_polygon_node = perception_avoidance.sidewalk_polygon_node:main',
         ],
     },
 )

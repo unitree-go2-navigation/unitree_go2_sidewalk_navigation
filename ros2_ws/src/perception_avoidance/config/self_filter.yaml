@@ -5,11 +5,17 @@ lidar_obstacle_node:
   ros__parameters:
     # ROI crop (forward obstacle zone)
     roi_x_min: 0.5
-    roi_x_max: 8.0
+    # 15.0 (P4, 8.0→15.0): 자전거급(5m/s)은 fast_stop_ttc 2.0s 기준 ~11m에서
+    # STOP 판단이 나와야 함 + 속도 추정 수렴(2~3프레임) 여유. 8m는 보행자용.
+    roi_x_max: 15.0
     roi_y_min: -3.0
     roi_y_max: 3.0
     roi_z_min: -0.3
-    roi_z_max: 0.5   # 로봇 키(~0.4m) 위 구조물(나뭇가지/표지판) 제외
+    # 1.2 (P4, 0.5→1.2): 0.5는 사람의 몸통을 잘라 다리(폭 ~0.1m ×2)만 남김 —
+    # L1 해상도(0.6°/열)에서 8m+ 원거리 탐지가 깜빡임 (자전거 12m 1프레임 후
+    # 7m까지 1.4s 소실 실측). 1.2는 몸통 포함 → 원거리 클러스터 안정.
+    # 로봇 통과 높이 위 구조물(나뭇가지/표지판, 통상 >1.5m)은 여전히 제외.
+    roi_z_max: 1.2
 
     # Self-filter box (base_link frame). Wider than physical body.
     self_x_min: -0.40
@@ -41,3 +47,17 @@ lidar_obstacle_node:
 
     # Publish rate cap (Hz)
     publish_rate: 10.0
+
+    # 추적 연관 게이트 (m) — CVM 예측 위치 기준 NN 매칭의 허용 오차.
+    # 1.6 (P4, 1.0→1.6): 신규 track(속도 미지)의 부트스트랩은 마지막 위치
+    # 기준이라 고속 물체(≤7m/s, 10Hz)의 프레임당 변위 ~0.75m + 여유 필요.
+    # 기존 track은 예측 매칭이라 오차가 작음. 정적 클러터끼리는 자기 자신
+    # (오차 ~0)이 greedy에서 항상 우선이라 교차 연관 위험 낮음.
+    assoc_max_dist: 1.6
+    # 미매칭 track 코스팅 한도 (프레임) — dropout 한두 프레임에 id·속도가
+    # 리셋되지 않도록 재연관용으로만 유지 (미발행). real_l1 게이트 근거.
+    track_coast_frames: 3   # ⚠ 6은 스테일 track의 클러스터 포획 → 유령 fast 지속 (bike_pass 3/5 실측)
+    # 클라우드 프레임 누적 (최근 K union, 1=끔). ⚠ 기본 OFF — 고속 물체의
+    # 프레임 레이어가 분리 클러스터(유령)가 되어 track을 강탈 (problem.md
+    # 2026-07-16). 원거리 희소 보완은 far_cluster_min_points가 담당.
+    accum_frames: 1

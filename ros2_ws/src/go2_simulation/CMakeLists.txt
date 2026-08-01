@@ -58,6 +58,7 @@ install(DIRECTORY
   urdf
   rviz
   config
+  maps
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -67,6 +68,7 @@ install(PROGRAMS
   scripts/capstone_gait_controller.py
   scripts/verify_joint_order.py
   scripts/record_lateral_gait_metrics.py
+  scripts/odom_tf_broadcaster.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

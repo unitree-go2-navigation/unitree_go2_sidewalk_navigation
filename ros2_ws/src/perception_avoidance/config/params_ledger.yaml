@@ -1,0 +1,449 @@
+# 파라미터 대장 (마스터 계획 v3.1.1 §4, C7) — 정본, 기계 판독.
+#
+# 원칙 8: 유도 결과(스칼라)만 기록하지 않는다 — formula + inputs 를 함께 기록해
+# 전제(센서 세대 등)가 바뀌면 무엇을 재계산해야 하는지 기계적으로 찾을 수 있게 한다.
+# 원칙 9: status 가 PENDING/INVALID 인 안전 파라미터로는 실기체를 기동하지 않는다.
+#
+# 레코드 필드:
+#   value         현재 값 (미정이면 null)
+#   status        CONFIRMED / PENDING / INVALID / PROVISIONAL / UNVERIFIED (§4.1)
+#   basis_tier    1 문헌 앵커 / 2 물리·기하 유도 / 3 시뮬 실측 보정 / 4 센서 사양 의존
+#   sensor_generation  tier 4 필수 — 값이 유도된 센서 세대 (L1 이면 재유도 대상)
+#   formula/inputs/constraint  유도식과 입력 심볼
+#   source        근거 출처 (문헌·표준·실측 기록)
+#   depends_on    확정에 필요한 측정 (§8: measurement_01~09) / 게이트
+#   binding       코드 결합 — test_params_ledger.py 가 값 일치를 강제
+#                 {file,node,param|params} = 런타임 yaml
+#                 {module,const}           = 모듈 상수
+#                 {module,ctor,attr}       = 클래스 기본값
+#   note          자유 기술
+meta:
+  version: 1
+  plan: collision-unified-rain-v3.md (v3.1.1)
+  updated: "2026-08-01"
+  note: >
+    시뮬은 Phase 3.5 전까지 L1 설정(10 Hz / min 0.8 m)으로 동작한다.
+    sensor_generation: L1 레코드는 Phase 3.5 재기준화의 전수 재유도 대상이다.
+
+parameters:
+  # ── 유도 심볼 (코드 미결합 — 재유도식의 입력/출력) ──────────────────
+  T_frame:
+    value: 0.18
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "1 / f_scan"
+    inputs: {f_scan_hz: 5.55}
+    source: "L2 데이터시트 (수평 스캔 5.55 Hz)"
+    depends_on: [measurement_06A]
+    note: "시뮬은 Phase 3.5 전까지 L1 10 Hz(0.10 s)로 동작"
+  T_perception:
+    value: 0.015
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    source: "v2 시뮬 실측 — 풀스택 동거 조건 재확인 필요"
+    depends_on: [measurement_03]
+  T_transport:
+    value: null
+    status: PENDING
+    basis_tier: 4
+    sensor_generation: L2
+    source: "경로별 p95 실측 (Jazzy 네이티브/Humble 컨테이너/WebRTC)"
+    depends_on: [measurement_03]
+  T_actuation:
+    value: null
+    status: PENDING
+    basis_tier: 4
+    sensor_generation: L2
+    source: "스텝 응답 데드타임 L"
+    depends_on: [measurement_09A]
+  T_total:
+    value: null
+    status: PENDING
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "N_fast * T_frame + T_perception + T_transport + T_actuation"
+    depends_on: [measurement_03, measurement_05, measurement_06, measurement_09]
+  R_confirm_p10:
+    value: null
+    status: PENDING
+    basis_tier: 4
+    sensor_generation: L2
+    source: "저반사율(10%) 자전거 실루엣의 트랙 확정 거리 p10"
+    depends_on: [measurement_07B]
+  v_robot_max:
+    value: null
+    status: PENDING
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "R_confirm_p10 / (fast_stop_ttc + T_total) - v_bike_assumed"
+    inputs: {v_bike_assumed: 5.0}
+    depends_on: [measurement_07]
+    note: "게이트 G4 — 0.5 미만이면 아키텍처 대안 B (§9.7)"
+  a_brake:
+    value: null
+    status: PENDING
+    basis_tier: 3
+    source: "추정 2~3 m/s² — P8 제동 실측으로 확정"
+    depends_on: [measurement_09A]
+  cp_quantile:
+    value: null
+    status: PENDING
+    basis_tier: 3
+    source: "Lindemann RA-L'23 conformal prediction — 시뮬 GT 잔차 1차(pooled), P9' 재캘리브레이션"
+    depends_on: [phase_4_cp_calibration]
+    note: "산출물 config/cp_quantiles.yaml (C1). cpa_growth 대체"
+  N_ped:
+    value: 4
+    status: PROVISIONAL
+    basis_tier: 3
+    note: "게이트는 시간 기반 persistence_slow/stop 사용 — N_ped ≡ ceil(persistence / T_frame)"
+  leg_swing_width:
+    value: 0.5
+    status: PROVISIONAL
+    basis_tier: 2
+    source: "몸통 0.31 + 보행 스윙 실효 확장 (시뮬 관측)"
+    depends_on: [measurement_09D]
+  footprint_a_x:
+    value: null
+    status: PENDING
+    basis_tier: 2
+    source: "Go2 길이 0.70 m 기준 0.55~0.62 추정 (C5 비등방 footprint 반장축)"
+    depends_on: [measurement_09D]
+  footprint_a_y:
+    value: null
+    status: PENDING
+    basis_tier: 2
+    source: "속도 의존 반단축 a_y(vx,vy,wz) (C5)"
+    depends_on: [measurement_09D]
+  phantom_speed:
+    value: {walk: 1.5, run: 2.0}
+    status: CONFIRMED
+    basis_tier: 1
+    source: "RSS Rule 4 (Shalev-Shwartz '17) — 폐색 뒤 팬텀 에이전트 가정"
+    note: "P7 occlusion_speed_node 구현 시 바인딩 추가"
+  dropoff_stop_height:
+    value: 0.12
+    status: UNVERIFIED
+    basis_tier: 2
+    source: "Go2 등판 한계 — 검출 가능성 자체 미확인 (G5)"
+    depends_on: [measurement_08C]
+  person_cap_radius:
+    value: 2.5
+    status: PROVISIONAL
+    basis_tier: 3
+    note: "사람 인접 속도 캡 반경 — 코드 리터럴(safety_stop_node, near_front >= 2.5), 상수 미분리"
+
+  # ── safety_stop.yaml 결합 ───────────────────────────────────────────
+  robot_half_length:
+    value: 0.35
+    status: CONFIRMED
+    basis_tier: 2
+    source: "Go2 몸통 0.70 m 실측 (다리 리치 포함 전후 반장)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: robot_half_length}
+  robot_half_width:
+    value: 0.155
+    status: CONFIRMED
+    basis_tier: 2
+    source: "URDF 유도 (hip housing 포함)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: robot_half_width}
+  corridor_margin:
+    value: 0.18
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "gait sway + localization + 센서 횡 불확실 예산 (시뮬 보정)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: corridor_margin}
+  slow_clearance:
+    value: 3.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: slow_clearance}
+  slow_ttc:
+    value: 3.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: slow_ttc}
+    note: "보행자 감속 — ISO 22839의 경고 ~4 s 심볼은 fast_slow_ttc 쪽"
+  stop_ttc:
+    value: 1.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: stop_ttc}
+    note: "보행자 정지 (시뮬 보정) — §1.4 재유도식의 stop_ttc 심볼은 fast_stop_ttc"
+  emergency_clearance:
+    value: 0.60
+    status: INVALID
+    basis_tier: 4
+    sensor_generation: L1
+    formula: "max(sensor_min_range, self_x_max) - robot_half_length + margin"
+    inputs: {sensor_min_range: 0.8, robot_half_length: 0.35, margin: 0.15}
+    source: "L1 사각 유도 — 0.25→0.45→0.60 상향 이력 (yaml 주석, head_on 회귀)"
+    depends_on: [measurement_05, phase_3_5_rebaseline]
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: emergency_clearance}
+    note: "L2(0.05 m)에서 사각 경계가 self-filter 박스로 바뀜 — 완화는 head_on N≥5 재통과 후에만"
+  blind_hold_clearance:
+    value: 0.60
+    status: INVALID
+    basis_tier: 4
+    sensor_generation: L1
+    formula: "max(sensor_min_range, self_x_max) - robot_half_length + margin"
+    inputs: {sensor_min_range: 0.8, robot_half_length: 0.35, margin: 0.15}
+    depends_on: [measurement_05, phase_3_5_rebaseline]
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: blind_hold_clearance}
+    note: "L2 재유도 시 ≈0.20 (self_x_max 0.40 기준) — blind-hold 메커니즘 존속 자체 재평가"
+  fast_speed_thresh:
+    value: 2.0
+    status: CONFIRMED
+    basis_tier: 1
+    source: "Bohannon '97 (빠른 보행 ~1.5 m/s) + RSS — 보행자/fast 경계"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_speed_thresh}
+    note: "§9.2 다변수화 예정 (경로 교차·t_CPA·track 신뢰 결합)"
+  fast_stop_ttc:
+    value: 2.0
+    status: PROVISIONAL
+    basis_tier: 1
+    source: "ISO 22839 AEB 개입 ~2 s 관례 (도메인 보완: ISO 4448 계열)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_stop_ttc}
+    note: "§1.4 구속(필요 감지 거리 ≤ R_confirm_p10) 위반 시 재협상 대상"
+  fast_slow_ttc:
+    value: 4.0
+    status: PROVISIONAL
+    basis_tier: 1
+    source: "ISO 22839 경고 ~4 s 관례"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_slow_ttc}
+  cpa_max_t:
+    value: 4.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: cpa_max_t}
+  cpa_halfwidth:
+    value: 0.25
+    status: PROVISIONAL
+    basis_tier: 2
+    formula: "leg_swing_width / 2"
+    inputs: {leg_swing_width: 0.5}
+    depends_on: [measurement_09D]
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: cpa_halfwidth}
+  cpa_margin:
+    value: 0.2
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "상대 물체 반경 여유 (시뮬 보정)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: cpa_margin}
+  cpa_growth:
+    value: 0.4
+    status: INVALID
+    basis_tier: 3
+    source: "CVM 예측 불확실 고정 팽창 0.4 m/s (v2)"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: cpa_growth}
+    note: "C1: cp_quantile 로 교체 예정. KF covariance 를 예측 반경에 쓰지 않는다 (§7.5)"
+  fast_hold_radius:
+    value: 2.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_hold_radius}
+  cvm_latency_max:
+    value: 0.3
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L1
+    formula: "~ T_frame + T_perception + T_transport 상한"
+    depends_on: [measurement_03]
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: cvm_latency_max}
+    note: "L2 T_frame 0.18 기준 상한 재검토 (0.4~0.5 후보)"
+  fast_trig_frames:
+    value: 4
+    status: PENDING
+    basis_tier: 3
+    depends_on: [measurement_06C]
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_trig_frames}
+    note: "= N_fast (C2). 프레임 단위 — T_frame 의존(④ 성격 겸유). 확정 지연 N·T_frame 이 §1.4 유도식 입력"
+  fast_max_extent:
+    value: 2.2
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "확장 구조물(울타리 파편) 유사속도 차단 — 시뮬 실측"
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_max_extent}
+
+  # ── self_filter.yaml 결합 ───────────────────────────────────────────
+  roi_x_min:
+    value: 0.5
+    status: PROVISIONAL
+    basis_tier: 2
+    formula: ">= self_x_max + margin"
+    inputs: {self_x_max: 0.40}
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_x_min}
+    note: "하향(근거리 활용)은 측정 8·Phase 6' 판단과 연동 (v3.1.1 등재)"
+  roi_x_max:
+    value: 15.0
+    status: INVALID
+    basis_tier: 4
+    sensor_generation: L1
+    formula: "v_rel * (fast_stop_ttc + T_total)"
+    constraint: "<= R_confirm_p10"
+    inputs: {v_rel: 5.5, fast_stop_ttc: 2.0, T_total_v2: 0.15}
+    depends_on: [measurement_03, measurement_05, measurement_06, measurement_07, measurement_09]
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_x_max}
+    note: "= ROI_fast. L2 재유도 시 필요 17.6 m > 가용 15 m — v_robot_max 하향으로 해소 (§1.4 ③)"
+  roi_z_max:
+    value: 1.2
+    status: UNVERIFIED
+    basis_tier: 3
+    depends_on: [measurement_08B]
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_z_max}
+  self_filter_box:
+    value: {self_x_min: -0.40, self_x_max: 0.40, self_y_min: -0.30,
+            self_y_max: 0.30, self_z_min: -0.50, self_z_max: 0.25}
+    status: INVALID
+    basis_tier: 4
+    sensor_generation: L1
+    depends_on: [measurement_09D, gate_G0]
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node,
+              params: [self_x_min, self_x_max, self_y_min, self_y_max, self_z_min, self_z_max]}
+    note: "L2 0.05 m 블라인드 → §6.1 전면 재작성 (다리 스윙 영역 포함). G0 통과 전 실기체 측정 전면 불가"
+  track_coast_frames:
+    value: 3
+    status: PROVISIONAL
+    basis_tier: 3
+    sensor_generation: L1
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: track_coast_frames}
+    note: "프레임 단위 — 5.55 Hz 에서 코스팅 0.3→0.54 s 로 변함 (Phase 3.5 재검토). 6 상향 금지 (유령 fast 실측)"
+  assoc_max_dist:
+    value: 1.6
+    status: PROVISIONAL
+    basis_tier: 3
+    sensor_generation: L1
+    formula: "~ v_max * T_frame + margin"
+    inputs: {v_max: 7.0, T_frame_l1: 0.10}
+    depends_on: [measurement_06B]
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: assoc_max_dist}
+    note: "L2 5.55 Hz 면 프레임당 변위 2배 — Phase 3.5 재유도"
+  accum_frames:
+    value: 1
+    status: CONFIRMED
+    basis_tier: 3
+    source: "유령 클러스터의 track 강탈 실측 (problem.md 2026-07-16) — 켜기 전 재검토 필수"
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: accum_frames}
+
+  # ── safety_stop_node 모듈 상수 (C3 이관 시 social_gap_node 로 이사) ──
+  yield_ground_approach:
+    value: -0.3
+    status: PENDING
+    basis_tier: 3
+    depends_on: [measurement_06C]
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_GROUND_APPROACH}
+    note: "양보 발동 지상속도 문턱 (92591f6 — 상대속도의 조기 발동 해소)"
+  yield_approach_vx:
+    value: -0.5
+    status: PENDING
+    basis_tier: 3
+    depends_on: [measurement_06C]
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_APPROACH_VX}
+    note: "래치 유지용 상대 vx 상한 — L2 클러터 밀도에서 창 재확인"
+  yield_approach_vx_min:
+    value: -2.0
+    status: PENDING
+    basis_tier: 3
+    depends_on: [measurement_06C]
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_APPROACH_VX_MIN}
+    note: "부트스트랩 속도 스파이크 하한 컷"
+  yield_engage_xmax:
+    value: 6.0
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_ENGAGE_XMAX}
+    note: "발동 거리 상한 — 추적 안정 구간에서만 시작, 조우당 1회 (92591f6). L2 밀도로 재확인"
+  yield_wait_max:
+    value: 8.0
+    status: CONFIRMED
+    basis_tier: 3
+    source: "양보 워치독 (센서 무관 — 사회 규범 시간 척도)"
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_WAIT_MAX}
+  yield_move_timeout:
+    value: 10.0
+    status: CONFIRMED
+    basis_tier: 3
+    source: "이동 시한 백스톱 (배회 방지, 센서 무관)"
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_MOVE_TIMEOUT}
+  yield_wait_near_max:
+    value: 20.0
+    status: CONFIRMED
+    basis_tier: 3
+    source: "래치 생존 + 접근 지속 시 워치독 연장 상한 (센서 무관)"
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_WAIT_NEAR_MAX}
+  yield_vy:
+    value: 0.4
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "크랩 명령 상한 — CHAMP 실효 크랩 감쇠 보상 (92591f6 이전 0.25)"
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_VY}
+    note: "C3 이관 시 goal_follower 소관"
+  yield_edge_off:
+    value: 0.50
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "양보 목표의 밴드 가장자리 이격 — 연석 이탈 방지 (3090672)"
+    binding: {module: perception_avoidance.safety_stop_node, const: YIELD_EDGE_OFF}
+  gap_exit_hyst:
+    value: 0.15
+    status: PROVISIONAL
+    basis_tier: 3
+    binding: {module: perception_avoidance.safety_stop_node, const: GAP_EXIT_HYST}
+    note: "기동 커밋 히스테리시스 — C3 이관 시 goal 생산 쪽으로 (값 유지)"
+  social_hold_t:
+    value: 3.0
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "측 래치·완화 유지 창 — 실측 nogap 스트레치 ~2.5 s 커버"
+    binding: {module: perception_avoidance.safety_stop_node, const: SOCIAL_HOLD_T}
+
+  # ── social_nav.GapRules 기본값 (P5a gap 판단) ───────────────────────
+  gap_attempt_min:
+    value: 0.8
+    status: PENDING
+    basis_tier: 3
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: attempt_min}
+    note: "정적-정적 squeeze 하한 (0.7→0.8 상향) — C5 비등방 footprint 도입 시 재하향 가능"
+  gap_default_min:
+    value: 1.0
+    status: CONFIRMED
+    basis_tier: 1
+    source: "Kirby PhD CMU '10 / Pacchierotti RO-MAN '06 — 정지 보행자 관여 gap"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: default_min}
+  gap_moving_min:
+    value: 1.2
+    status: CONFIRMED
+    basis_tier: 1
+    source: "동 문헌 — 이동 보행자 관여 gap"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: moving_min}
+  person_margin_hard:
+    value: 0.45
+    status: CONFIRMED
+    basis_tier: 1
+    source: "Hall '66 친밀권 경계 ≈0.45 m (proxemics) — SSM 참조 구조로 보강 (§7.2)"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: person_margin}
+  person_margin_comfort:
+    value: 0.60
+    status: CONFIRMED
+    basis_tier: 1
+    source: "Kirby '10 통과 여유 0.4~0.6 m 상단"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: person_comfort}
+  gap_edge_margin:
+    value: 0.30
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "polygon 경계 물리 미확인(연석/펜스) + odom 드리프트 + 요 sway 예산"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: edge_margin}
+  gap_static_margin:
+    value: 0.25
+    status: PROVISIONAL
+    basis_tier: 3
+    source: "횡 불확실 예산(0.18) + 클러스터 폭 과소측정 — 대각 스침 8.8 cm 실측 후 상향"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: static_margin}
+  pass_speed_cap:
+    value: 0.3
+    status: CONFIRMED
+    basis_tier: 1
+    source: "ISO 13482 근접 시 속도 제한 원칙 + 계획 v2 확정 (사람 인접 통과 ≤0.3 m/s)"
+    binding: {module: perception_avoidance.social_nav, ctor: GapRules, attr: pass_speed_cap}

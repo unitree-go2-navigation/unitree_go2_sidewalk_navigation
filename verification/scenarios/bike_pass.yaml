@@ -1,0 +1,23 @@
+# 측방 통과 자전거 5 m/s (false stop 게이트): 코리도 밖(측방 1.5m 오프셋)을
+# 반대 방향으로 스쳐 지나는 자전거에 정지하면 안 된다 — CPA 미스거리 판정이
+# "거리가 줄어드는 물체"와 "진로로 오는 물체"를 구분하는지 확인.
+# 자전거 표현은 midday_ride GLB + WaypointMover 모델이다.
+name: bike_pass
+actors:
+  - name: bike_pass
+    loop: false
+    waypoints:            # [t, x, y, yaw] — y=6.7 (로봇 경로 y=5.2 + 1.5m)
+      - [0, -14.0, 6.7, 0]
+      - [8, -12.0, 6.7, 0]     # 0.25 m/s 대기 롤
+      - [15.4, 25.0, 6.7, 0]   # 5 m/s 직진 통과 (t≈12.5 로봇 옆 통과) → hold
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 25.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.5              # 통과 시 ≈1.0m 예상
+  max_stop_entries: 0                # false stop 금지 (핵심 게이트)
+  forbid_states: [ESTOP]
+  min_travel_m: 8.5                  # empty와 동일 — 무정지 진행

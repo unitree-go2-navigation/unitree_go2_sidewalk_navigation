@@ -1,0 +1,29 @@
+# P5-4 좁은 틈 거부 게이트: 볼라드(1.2m) 틈 0.6m (< attempt_min 0.8) —
+# 통과 시도 없이 코리도 STOP으로 정지해야 한다 (접촉 0).
+# 스퀴즈 모드([0.6,0.8) 크립 통과)는 실검증 4라운드에서 다리 스윙 접촉이
+# 반복돼 미채택 — 실효 통과 하한 = attempt_min 0.8 (problem.md 2026-07-22
+# P5-4). ⚠ 무릎 높이 박스는 근접 ~0.9m에서 L1 구형 사각에 완전 소실(키 큰
+# 물체는 상체가 사각 위로 보임 = blind-hold 가능) → 낮은 장애물의 거부
+# 게이트는 Phase 6(D435i 지면 장애물)에서 별도로.
+name: narrow_gap_refuse
+actors:
+  - name: box_south
+    box: true
+    x: 10.0
+    y: 4.75
+    size: [0.3, 0.3, 1.2]
+  - name: box_north
+    box: true
+    x: 10.0
+    y: 5.65
+    size: [0.3, 0.3, 1.2]
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 30.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.1
+  require_states: [STOP]
+  forbid_states: [ESTOP]

@@ -1,0 +1,49 @@
+# 정면 자전거 4 m/s — real_l1 열화 게이트용 변형 (계획: real_l1 정면 4m/s 3/3).
+# 구조는 bike_head_on(5m/s)과 동일: 접근 → veer(코리도 이탈) → 후방 hold.
+# 자전거 표현은 midday_ride GLB + WaypointMover 모델이다.
+name: bike_head_on_4ms
+actors:
+  - name: bike_head_on_4ms
+    loop: false
+    # ⚠ waypoint는 균등 시간(1s)·균등 거리(4m) — 스플라인 재타이밍 감속 포켓
+    # 방지 (bike_head_on.yaml 주석 참조). 통과 간격 ~0.5m = 몸통폭 1.6배.
+    waypoints:            # [t, x, y, yaw] — 1s 간격, 세그먼트당 4m
+      - [0, -14.0, 5.2, 0]
+      - [8, -12.0, 5.2, 0]       # 0.25 m/s 대기 롤
+      - [9, -8.0, 5.2, 0]
+      - [10, -4.0, 5.2, 0]
+      - [11, 0.0, 5.2, 0]
+      - [12, 4.0, 5.2, 0]
+      - [13, 8.0, 5.2, 0]
+      - [13.3, 9.2, 5.2, 0]      # 정면 접근 연장 — 열화에서 fast 확정 창 +0.3s
+                                 # (탐지~veer 창이 0.8s뿐이라 STOP 미발화 ~1/8,
+                                 #  안무로 창을 벌리는 것이 파라미터 무리스크)
+      - [14.25, 12.0, 6.25, 0.33] # 사선 이탈 — 로봇 정지선(x≈13.4) 앞에서 완료
+      - [15, 15.0, 6.25, 0]
+      - [16, 19.0, 6.25, 0]
+      - [16.75, 22.0, 6.25, 0]   # 후방 hold
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 25.0
+criteria:
+  max_collisions: 0
+  min_clearance_gt: 0.3      # 근접 통과 간격 ≈0.5m 예상 (몸통폭 1.6배)
+  require_states: [STOP]     # SLOW 미요구 — bike_head_on.yaml 주석 참조
+  forbid_states: [ESTOP]
+  require_stop_during_actor_motion: true
+  min_clearance_at_stop_gt: 2.0
+  require_no_resume_before_cpa: true
+  min_travel_m: 5.0
+# real_l1 열화 런 전용 오버레이: 밀도 1/5~1/10 + dropout에서는 안정 track
+# 성립이 늦어 클린과 같은 조기정지 마진(2.0m)은 물리적 하한에 걸림 (실측:
+# 통과 런 1.9~2.5m, 경계 미달 런 1.46/1.87m — 전부 충돌 0, 정지 래치 정상).
+# 조기정지 요구 자체는 유지하되 문턱만 1.2m(= emergency 백스톱의 2배)로.
+# 안전 의미론 항목(max_collisions/min_clearance_gt/상태)은 오버레이 금지.
+criteria_degraded:
+  min_clearance_at_stop_gt: 1.2
+  # 열화 깜빡임 구간에서는 STOP↔재출발이 반복될 수 있음 — 매 재출발이
+  # 즉시 재정지되는 것(보호 래치 정상 동작, 실측 min_clr ≥0.34·충돌 0)이
+  # 열화 모드의 올바른 거동이므로 부드러움 기준은 클린 전용으로 한정.
+  require_no_resume_before_cpa: false

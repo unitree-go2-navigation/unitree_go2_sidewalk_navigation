@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<sdf version="1.10">
+  <model name="midday_ride">
+    <static>true</static>
+
+    <link name="cyclist_link">
+      <visual name="cyclist_visual">
+        <!-- glTF Y-up -> Gazebo Z-up; source forward -Y -> model forward +X -->
+        <pose>0 0 0 1.57079632679 0 1.57079632679</pose>
+        <geometry>
+          <mesh>
+            <uri>model://midday_ride/meshes/midday_ride_gazebo.glb</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,1026 @@
+<?xml version="1.0" ?>
+
+<sdf version="1.6">
+<!--
+  small_city_test_w5 — 보도 폭 5.0m (표준 3.0m 대비 남측 확장).
+  용도: 추후 결정 (2026-07-29 기준 미정 — 사용자 지정 예정).
+  월드 4종 사용 의도:
+    - small_city_test     (보도 3m): 표준 반복 실험 (좁은 보도 스트레스)
+    - small_city_test_w5  (보도 5m): 용도 추후 결정
+    - small_city_test_w7  (보도 7m): 다수 장애물·군중 액터 시나리오 무대
+    - small_city (원본 도시): 최종 알고리즘 완성 후 실기체 전이 전 테스트
+  노변 물체·액터는 비워둠 — 시나리오에서 명시적으로 배치.
+  생성: verification/gen_wide_worlds.py (small_city_test.sdf 기반)
+-->
+  <world name="default">
+
+    <gui>
+     <camera name="user_camera">
+       <pose>-40.637 0.86 2.365 0 0.1899 0.476</pose>
+     </camera>
+    </gui>
+    <scene>
+      <grid>false</grid>
+      <origin_visual>false</origin_visual>
+      <ambient>0.85 0.85 0.85 1</ambient>
+      <sky>
+        <clouds>
+          <speed>12</speed>
+        </clouds>
+      </sky>
+      <background>0.35 0.35 0.35 1.0</background>
+    </scene>
+
+    <physics name='1ms' type='ignored'>
+      <max_step_size>0.001</max_step_size>
+      <!-- 0.25 캡: L1 GPU 라이다의 벽시계 상한이 이 머신에서 ~2.5Hz(월드
+           무관 실측, 2026-07-23). 원본 small_city는 부하로 자연히 RTF~0.5
+           가 되어 심 시간 L1 ~5Hz를 유지했고 P4~P5 튜닝이 전부 그 조건
+           기준. 축소 월드가 RTF 1.0으로 돌면 심 시간 2.5Hz로 떨어져
+           게이트 sensor_timeout 연발 → 동일 조건 재현을 위한 캡.
+           풀스택(원본) 실측 RTF 0.13~0.33·L1 심 ~7.5Hz 기준 0.25. -->
+      <real_time_factor>0.25</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>5.5645e-06 2.28758e-05 -4.23884e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <plugin name='gz::sim::systems::Physics' filename='gz-sim-physics-system'/>
+    <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system'/>
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
+    <plugin name='gz::sim::systems::Contact' filename='gz-sim-contact-system'/>
+    <plugin name='gz::sim::systems::Sensors' filename='gz-sim-sensors-system'>
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <!-- Publishes actor + configured-model WorldPose for evaluation oracle (not used by avoidance) -->
+    <plugin name='go2_simulation::ActorPosePublisher' filename='ActorPosePublisher'>
+      <topic>/world/default/actor_pose/info</topic>
+      <update_rate>50</update_rate>
+      <frame_id>world</frame_id>
+      <model_name>go2</model_name>
+    </plugin>
+
+    <!-- A global light source -->
+    <light type="directional" name="sun">
+      <pose>0 0 1000 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.4</direction>
+    </light>
+
+    <!-- ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <pose>0 0 -1 0 0 0</pose>
+      </link>
+    </model>
+
+    <!-- Environment -->
+    <include>
+      <name>city_terrain_1</name>
+      <pose>
+      0
+      0
+      0.0
+      0
+      0
+      0
+      </pose>
+      <uri>model://city_terrain</uri>
+    </include>
+
+
+
+    <!-- Base plane to cover ocean exposure in city blocks -->
+    <model name="city_base_plane">
+      <static>true</static>
+      <pose>37.5 0 -8 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <box>
+              <size>170 95 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.75 0.70 0.55 1</ambient>
+            <diffuse>0.75 0.70 0.55 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>170 95 0.01</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+    </model>
+
+
+    <model name="road_y_1">
+  <static>true</static>
+  <pose>-45 0.25 0.01 0 0 1.570796</pose>
+  <link name="link">
+    <collision name="collision">
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+    <visual name="visual">
+      <cast_shadows>false</cast_shadows>
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.10 0.10 0.10 1</ambient>
+        <diffuse>0.10 0.10 0.10 1</diffuse>
+        <specular>0.02 0.02 0.02 1</specular>
+      </material>
+    </visual>
+  </link>
+</model>
+
+
+    <model name="road_y_2">
+  <static>true</static>
+  <pose>-15 0.25 0.01 0 0 1.570796</pose>
+  <link name="link">
+    <collision name="collision">
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+    <visual name="visual">
+      <cast_shadows>false</cast_shadows>
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.10 0.10 0.10 1</ambient>
+        <diffuse>0.10 0.10 0.10 1</diffuse>
+        <specular>0.02 0.02 0.02 1</specular>
+      </material>
+    </visual>
+  </link>
+</model>
+
+
+    <model name="road_y_3">
+  <static>true</static>
+  <pose>45 0.25 0.01 0 0 1.570796</pose>
+  <link name="link">
+    <collision name="collision">
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+    <visual name="visual">
+      <cast_shadows>false</cast_shadows>
+      <geometry>
+        <box>
+          <size>97.9 7.4 0.02</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.10 0.10 0.10 1</ambient>
+        <diffuse>0.10 0.10 0.10 1</diffuse>
+        <specular>0.02 0.02 0.02 1</specular>
+      </material>
+    </visual>
+  </link>
+</model>
+
+
+
+
+
+
+
+
+    <model name="road_x_2">
+  <static>true</static>
+  <pose>37.5 0 0.015 0 0 0</pose>
+  <link name="link">
+    <collision name="collision">
+      <geometry>
+        <box>
+          <size>157.6 8.4 0.02</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+    <visual name="visual">
+      <cast_shadows>false</cast_shadows>
+      <geometry>
+        <box>
+          <size>157.6 8.4 0.02</size>
+        </box>
+      </geometry>
+      <material>
+        <ambient>0.10 0.10 0.10 1</ambient>
+        <diffuse>0.10 0.10 0.10 1</diffuse>
+        <specular>0.02 0.02 0.02 1</specular>
+      </material>
+    </visual>
+  </link>
+</model>
+
+
+
+
+
+    <!-- Sidewalks -->
+
+    <!--
+      Drift diagnostic: replace the spawn sidewalk's original tall box
+      collision with a shallow raised slab.  The slab bottom is at the visual
+      sidewalk top (z=0.15) and its top is at z=0.17, so it tests whether
+      reducing visible/physical penetration improves Go2 foot contact.
+    -->
+    <model name="sidewalk_16_raised_collision_test">
+      <static>true</static>
+      <pose>15.000000 4.2 0.160000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>52.600000 5.0 0.01</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+    </model>
+
+      <!-- East -->
+
+      <!-- West -->
+
+
+
+
+      <!-- South -->
+
+
+
+
+      <!-- North -->
+
+
+      <!-- East -->
+
+      <!-- West -->
+
+
+
+
+      <!-- South -->
+
+
+
+
+      <!-- North -->
+
+
+      <!-- East -->
+
+      <!-- West -->
+
+
+
+
+      <!-- South -->
+
+
+
+
+
+      <!-- North -->
+
+
+      <!-- East -->
+      <model name="sidewalk_16">
+  <static>true</static>
+  <pose>0 0 0 0 0 0</pose>
+  <link name="link">
+    <visual name="visual">
+      <geometry>
+        <polyline>
+          <height>0.15</height>
+          <point>-11.3 2.533333</point>
+          <point>-11.275528258147578 2.275819</point>
+          <point>-11.204508497187474 2.043512</point>
+          <point>-11.093892626146237 1.859153</point>
+          <point>-10.954508497187474 1.740786</point>
+          <point>-10.8 1.7</point>
+          <point>40.8 1.7</point>
+          <point>40.95450849718747 1.740786</point>
+          <point>41.093892626146236 1.859153</point>
+          <point>41.20450849718747 2.043512</point>
+          <point>41.275528258147574 2.275819</point>
+          <point>41.3 2.533333</point>
+          <point>41.3 5.866667</point>
+          <point>41.275528258147574 6.124181</point>
+          <point>41.20450849718747 6.356488</point>
+          <point>41.093892626146236 6.540847</point>
+          <point>40.95450849718747 6.659214</point>
+          <point>40.8 6.7</point>
+          <point>-10.8 6.7</point>
+          <point>-10.954508497187474 6.659214</point>
+          <point>-11.093892626146237 6.540847</point>
+          <point>-11.204508497187474 6.356488</point>
+          <point>-11.275528258147578 6.124181</point>
+          <point>-11.3 5.866667</point>
+        </polyline>
+      </geometry>
+      <material>
+        <ambient>0.45 0.45 0.42 1</ambient>
+        <diffuse>0.45 0.45 0.42 1</diffuse>
+        <specular>0.04 0.04 0.04 1</specular>
+      </material>
+    </visual>
+    <collision name="collision">
+      <pose>15.0 5.2 0.075 0 0 0</pose>
+      <geometry>
+        <box>
+          <size>52.6 3.0 0.15</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>0.8</mu>
+            <mu2>0.8</mu2>
+          </ode>
+        </friction>
+        <contact>
+          <ode>
+            <kp>10000.0</kp>
+            <kd>1.0</kd>
+          </ode>
+        </contact>
+        <bounce/>
+      </surface>
+    </collision>
+  </link>
+</model>
+
+      <!-- West -->
+
+
+
+
+      <!-- South -->
+
+        <model name="sidewalk_18">
+  <static>true</static>
+  <pose>0 0 0 0 0 0</pose>
+  <link name="link">
+    <visual name="visual">
+      <geometry>
+        <polyline>
+          <height>0.15</height>
+          <point>-11.3 4.2</point>
+          <point>-11.275528258147578 4.045491502812527</point>
+          <point>-11.204508497187474 3.9061073738537635</point>
+          <point>-11.093892626146237 3.7954915028125265</point>
+          <point>-10.954508497187474 3.7244717418524234</point>
+          <point>-10.8 3.7</point>
+          <point>-8.8 3.7</point>
+          <point>-8.645491502812527 3.7244717418524234</point>
+          <point>-8.506107373853764 3.7954915028125265</point>
+          <point>-8.395491502812527 3.9061073738537635</point>
+          <point>-8.324471741852424 4.045491502812527</point>
+          <point>-8.3 4.2</point>
+          <point>-8.3 40.8</point>
+          <point>-8.324471741852424 40.95450849718747</point>
+          <point>-8.395491502812527 41.093892626146236</point>
+          <point>-8.506107373853764 41.20450849718747</point>
+          <point>-8.645491502812527 41.275528258147574</point>
+          <point>-8.8 41.3</point>
+          <point>-10.8 41.3</point>
+          <point>-10.954508497187474 41.275528258147574</point>
+          <point>-11.093892626146237 41.20450849718747</point>
+          <point>-11.204508497187474 41.093892626146236</point>
+          <point>-11.275528258147578 40.95450849718747</point>
+          <point>-11.3 40.8</point>
+        </polyline>
+      </geometry>
+      <material>
+        <ambient>0.45 0.45 0.42 1</ambient>
+        <diffuse>0.45 0.45 0.42 1</diffuse>
+        <specular>0.04 0.04 0.04 1</specular>
+      </material>
+    </visual>
+    <collision name="collision">
+      <pose>-9.800000 22.500000 0.075000 0 0 0</pose>
+      <geometry>
+        <box>
+          <size>3.000000 37.600000 0.01</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>0.8</mu>
+            <mu2>0.8</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+  </link>
+</model>
+
+
+
+      <!-- North -->
+      <model name="sidewalk_19">
+  <static>true</static>
+  <pose>0 0 0 0 0 0</pose>
+  <link name="link">
+    <visual name="visual">
+      <geometry>
+        <polyline>
+          <height>0.15</height>
+          <point>38.3 4.2</point>
+          <point>38.32447174185242 4.045491502812527</point>
+          <point>38.395491502812526 3.9061073738537635</point>
+          <point>38.50610737385376 3.7954915028125265</point>
+          <point>38.645491502812526 3.7244717418524234</point>
+          <point>38.8 3.7</point>
+          <point>40.8 3.7</point>
+          <point>40.95450849718747 3.7244717418524234</point>
+          <point>41.093892626146236 3.7954915028125265</point>
+          <point>41.20450849718747 3.9061073738537635</point>
+          <point>41.275528258147574 4.045491502812527</point>
+          <point>41.3 4.2</point>
+          <point>41.3 40.8</point>
+          <point>41.275528258147574 40.95450849718747</point>
+          <point>41.20450849718747 41.093892626146236</point>
+          <point>41.093892626146236 41.20450849718747</point>
+          <point>40.95450849718747 41.275528258147574</point>
+          <point>40.8 41.3</point>
+          <point>38.8 41.3</point>
+          <point>38.645491502812526 41.275528258147574</point>
+          <point>38.50610737385376 41.20450849718747</point>
+          <point>38.395491502812526 41.093892626146236</point>
+          <point>38.32447174185242 40.95450849718747</point>
+          <point>38.3 40.8</point>
+        </polyline>
+      </geometry>
+      <material>
+        <ambient>0.45 0.45 0.42 1</ambient>
+        <diffuse>0.45 0.45 0.42 1</diffuse>
+        <specular>0.04 0.04 0.04 1</specular>
+      </material>
+    </visual>
+    <collision name="collision">
+      <pose>39.800000 22.500000 0.075000 0 0 0</pose>
+      <geometry>
+        <box>
+          <size>3.000000 37.600000 0.01</size>
+        </box>
+      </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>0.8</mu>
+            <mu2>0.8</mu2>
+          </ode>
+        </friction>
+        <bounce/>
+        <contact/>
+      </surface>
+    </collision>
+  </link>
+</model>
+
+
+      <!-- East -->
+
+      <!-- West -->
+
+
+
+
+
+      <!-- South -->
+
+
+
+
+      <!-- North -->
+
+
+      <!-- East -->
+
+      <!-- West -->
+
+
+
+
+      <!-- South -->
+
+
+
+
+      <!-- North -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- North sidewalk -->
+
+
+    <!-- South sidewalk
+         Commented out because it leaks beyond the heightmap and intersects bridges
+
+     -->
+
+    <!-- East sidewalk -->
+
+
+    <!-- West sidewalk
+         Commented out because it leaks beyond the heightmap
+
+     -->
+
+    <!-- Buildings -->
+
+    <!-- North block -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- North road -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Block 0 0 -->
+
+    <!-- Block 0 1 -->
+
+
+
+
+
+
+
+
+
+    <!-- Block 0 2 -->
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Block 0 3 -->
+
+    <!-- Block 1 0 -->
+
+    <!-- Block 1 1 -->
+
+    <include>
+      <name>law_office_82</name>
+      <pose>
+      8.47
+      9.356
+      0.0
+      0
+      0
+      0
+      </pose>
+      <uri>model://law_office</uri>
+    </include>
+
+    <include>
+      <name>thrift_shop_83</name>
+      <pose>
+      1.35
+      9.356
+      0.0
+      0
+      0
+      0
+      </pose>
+      <uri>model://thrift_shop</uri>
+    </include>
+
+    <include>
+      <name>salon_84</name>
+      <pose>
+      15.7
+      9.356
+      0.0
+      0
+      0
+      0
+      </pose>
+      <uri>model://salon</uri>
+    </include>
+
+
+
+
+
+
+
+
+    
+
+
+    <!-- Block 1 2 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Block 1 3 -->
+
+    <!-- Block 2 0 -->
+
+    <!-- Block 2 1 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Block 2 2 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Block 2 3 -->
+
+    <!-- West block -->
+
+    <!-- East block -->
+
+
+    <!-- Construction zone -->
+
+    <!-- South island -->
+
+
+
+
+
+    <!-- Stop lights -->
+
+
+
+
+
+
+
+
+    
+
+
+    
+
+
+
+
+
+
+    <!-- Stop signs -->
+
+
+
+    
+
+
+
+
+
+    <!-- Street lights -->
+
+
+
+
+
+
+
+    
+
+
+    
+
+
+
+
+
+
+
+
+    <!-- Telephone poles -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- Parallel-parked cars -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          
+
+
+
+
+    <!-- Pedestrian actor (GPU 센서 감지 가능, 물리 충돌 없음) -->
+    <!-- 충돌 평가: 로봇-actor 간 거리 기반으로 판정 -->
+    
+
+  </world>
+</sdf>

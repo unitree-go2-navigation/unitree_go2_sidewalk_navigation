@@ -94,10 +94,21 @@ def generate_launch_description():
         description="Path to the robot description xacro file",
     )
 
+    # D435i 카메라 렌더 토글 (nav 실험은 OFF — GPU를 L1 라이다에 양보)
+    declare_cameras_enabled = DeclareLaunchArgument(
+        "cameras_enabled", default_value="true"
+    )
+
+    # 보도 밴드 출처: config(사전 정의, 회귀 재현성) | lidar(실시간 추정)
+    declare_band_source = DeclareLaunchArgument(
+        "band_source", default_value="config"
+    )
+
     # Description nodes and parameters
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
-        Command(["xacro ", xacro_file]),
+        Command(["xacro ", xacro_file,
+                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled")]),
         value_type=str,
     )
     robot_description = {"robot_description": robot_description_content}
@@ -280,20 +291,46 @@ def generate_launch_description():
     )
 
     # safety_stop gate: teleop /cmd_vel → filter → /cmd_vel_safe → CHAMP
+    # 게이트 파라미터 override yaml (빈 문자열 = 없음). 기본 yaml 위에
+    # 겹쳐 로드 — 데모/실험용 임시 튜닝을 본 설정 파일 수정 없이 주입.
+    declare_safety_stop_extra = DeclareLaunchArgument(
+        "safety_stop_extra_params", default_value="",
+        description="Optional extra params YAML layered over safety_stop.yaml")
+    safety_stop_extra = LaunchConfiguration('safety_stop_extra_params')
+    safety_stop_params = [
+        safety_stop_yaml,
+        {'use_sim_time': use_sim_time,
+         'enable_gate': ParameterValue(
+             LaunchConfiguration('safety_gate'), value_type=bool)},
+    ]
     safety_stop_node = Node(
         package='perception_avoidance',
         executable='safety_stop_node',
         name='safety_stop_node',
         output='screen',
-        parameters=[
-            safety_stop_yaml,
-            {'use_sim_time': use_sim_time,
-             'enable_gate': ParameterValue(
-                 LaunchConfiguration('safety_gate'), value_type=bool)},
-        ],
+        parameters=safety_stop_params + [
+            PythonExpression(["'", safety_stop_extra, "' or '",
+                              safety_stop_yaml, "'"])],
         remappings=[
             ('/cmd_vel_in', '/cmd_vel'),       # subscribe to teleop output
             ('/cmd_vel_safety', '/cmd_vel_safe'),  # publish filtered to CHAMP input
+        ],
+    )
+
+    # 보도 경계 polygon (Phase 5a) — 팀원 segmentation 계약의 시뮬 대역.
+    # /odom이 월드 좌표로 초기화되는 스택이라 스폰 인자 전달 불필요.
+    sidewalk_polygon_yaml = os.path.join(
+        perception_avoidance, 'config/sidewalk_polygon.yaml')
+    sidewalk_polygon_node = Node(
+        package='perception_avoidance',
+        executable='sidewalk_polygon_node',
+        name='sidewalk_polygon_node',
+        output='screen',
+        parameters=[
+            sidewalk_polygon_yaml,
+            {'use_sim_time': use_sim_time},
+            # config = 월드 고정 YAML(결정적, 회귀용) / lidar = 실시간 추정
+            {'band_source': LaunchConfiguration('band_source')},
         ],
     )
 
@@ -307,7 +344,7 @@ def generate_launch_description():
         name="SDF_PATH",
         value=small_city_models_path,
     )
-    # Allow Gazebo to find the ActorPosePublisher system plugin built in this package
+    # Allow Gazebo to find custom ActorPosePublisher / WaypointMover plugins.
     go2_simulation_plugin_path = os.path.normpath(
         os.path.join(go2_simulation, "..", "..", "lib"))
     gazebo_plugin_path = AppendEnvironmentVariable(
@@ -366,6 +403,8 @@ def generate_launch_description():
 
             # RealSense D435i RGBD camera + IMU topics
             '/d435i/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            # 분리 RGB 이미저 (69°/720p, 데모 POV용 — xacro d435i_color 참조)
+            '/d435i/color/image@sensor_msgs/msg/Image[gz.msgs.Image',
             '/d435i/depth_image@sensor_msgs/msg/Image[gz.msgs.Image',
             '/d435i/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
             '/d435i/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
@@ -449,6 +488,7 @@ def generate_launch_description():
             declare_gazebo_world,
             declare_gui,
             declare_safety_gate,
+            declare_safety_stop_extra,
             declare_oracle_csv,
             declare_degrade_profile,
             declare_world_init_x,
@@ -458,6 +498,8 @@ def generate_launch_description():
             declare_world_init_pitch,
             declare_world_init_heading,
             declare_description_path,
+            declare_cameras_enabled,
+            declare_band_source,
             gazebo_resource_path,
             small_city_sdf_path,
             gazebo_plugin_path,
@@ -496,5 +538,8 @@ def generate_launch_description():
             degrade_pointcloud_node,
             lidar_obstacle_node,
             safety_stop_node,
+
+            # Phase 5a: 보도 경계 polygon
+            sidewalk_polygon_node,
         ]
     )

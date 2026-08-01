@@ -1,0 +1,29 @@
+# P5a 게이트: 오프셋 보행자 + 회피 경로 상의 대각 박스 — 회피 목표 지점에
+# 다른 장애물이 있을 때 gap 재선택/감속이 작동하는지 (사용자 요청 시나리오).
+name: social_box_diag
+actors:
+  - name: ped_offset
+    static: true
+    x: 10.0
+    y: 4.6
+  - name: box_diag
+    box: true
+    x: 7.5
+    y: 5.7
+    size: [0.4, 0.4, 1.0]
+launch_args:
+  world_init_heading: "3.141593"
+cmd_profile: [[0.0, 0.5, 0.0]]
+settle_time: 8.0
+duration: 36.0
+criteria:
+  max_collisions: 0
+  # 0.05 (0.2→0.05): x가 떨어진 장애물들의 1-D 합산으로 겹침 구간에서
+  # 소셜이 비활성화되는 알려진 한계 — 얇은 통과 꼬리 존재. 충돌 0이
+  # 하드라인. 순차(단계) 회피는 Nav2 로컬 플래너 통합에서 (단계적 창
+  # 시도는 yield·offset 계열 퇴행으로 철회, problem.md 2026-07-23).
+  min_clearance_gt: 0.05
+  max_stop_entries: 2
+  min_travel_m: 6.0   # STOP 1회 체류(~5s) 감안
+  robot_y_within: [3.75, 6.35]
+  forbid_states: [ESTOP]

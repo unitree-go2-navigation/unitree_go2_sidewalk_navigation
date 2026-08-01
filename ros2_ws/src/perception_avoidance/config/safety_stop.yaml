@@ -36,13 +36,70 @@ safety_stop_node:
     # 필요한 상황의 최종 정지는 emergency_clearance 백스톱이 담당.
     creep_v_min: 0.12
     stop_ttc: 1.0
+    # 사각 소실 유지(blind-hold): 이보다 가까이 보이던 코리도 물체가 어떤
+    # 탐지로도 이어지지 않고 사라지면 min range 사각 진입으로 간주, 마지막
+    # clearance를 유지 (WAIT 해제→RESUME 사각 재진입 관통 방지 — 2026-07-13
+    # head_on 충돌 2건: closing_eps 미만 초저속 접근 보행자가 사각 경계에서
+    # 깜빡임 → '클리어' 오판). 옆으로 비켜난 경우(코리도 밖 인근 탐지)는 해제.
+    # min_range 0.8 − half_length 0.35 + margin 0.15 = 0.60.
+    blind_hold_clearance: 0.60
 
     # Min closing speed (m/s) to treat an obstacle as approaching
     closing_eps: 0.05
 
+    # P4 fast-class (자전거/킥보드): |v_rel| > fast_speed_thresh인 물체는
+    # 코리도 점유와 무관하게 CPA(최근접점) 미스거리로 조기 반응.
+    #   트리거: d_CPA < cpa_halfwidth + cpa_margin + cpa_growth·t_CPA
+    #           AND t_CPA < cpa_max_t
+    #   반응: t_CPA ≤ fast_stop_ttc → STOP, ≤ fast_slow_ttc → SLOW
+    # 측방 1.5m 평행 통과는 d_CPA=1.5 > 1.25(t_CPA 2s 기준)로 무반응 (bike_pass).
+    # 정적 클러터는 |v_rel|≈로봇 속도(≤0.5)라 fast 임계에 안 걸림.
+    fast_speed_thresh: 2.0
+    fast_stop_ttc: 2.0     # 5m/s 기준 ~11m에서 STOP — 감지 ROI 15m 이내
+    fast_slow_ttc: 4.0
+    cpa_max_t: 4.0
+    cpa_halfwidth: 0.25    # Go2 유효폭 0.5m(gait sway 포함)의 절반
+    cpa_margin: 0.2        # 상대 물체 반경 여유
+    cpa_growth: 0.4        # CVM 예측 불확실 팽창 (m/s)
+    # STOP/WAIT 중 fast 물체가 이 미스거리 안에서 아직 접근 중이면 재출발 금지
+    # (CPA 통과 = 멀어짐 전환까지 STOP 유지). NOMINAL 주행에는 미적용.
+    fast_hold_radius: 2.0
+    # latency 보상 상한 (s): 지연은 메시지별 실측(수신 시각 − 스캔 stamp),
+    # fast 물체만 CVM 전방 전파. 실기체 파이프라인 실측치로 상한 재검토 (P8).
+    cvm_latency_max: 0.3
+    # fast 트리거 지속 조건: 같은 track id의 트리거 카운트(+1/미트리거 -1,
+    # 감쇠형)가 이 값에 도달해야 반응 — 클러터 centroid 요동의 단발 속도
+    # 스파이크(실측 ~8m/s)와 측방 통과 자전거의 vy 노이즈 교대 트리거를
+    # 거르되, 열화 dropout 한 프레임에는 리셋되지 않음 (연속 요구의 약점).
+    # 4 (3→4): 가림 경계의 지속성 유사속도가 3을 ~2/10 run 빈도로 뚫음.
+    # 비용: 5m/s 기준 0.4s = 2.2m 접근 후 확정 (탐지 ~14m에서 여유 충분).
+    fast_trig_frames: 4
+    # fast-class 크기 상한: 자전거/킥보드/사람 부류는 compact. bbox 한 변이
+    # 이보다 긴 확장 구조물(울타리 파편)은 fast 후보 제외 — 가림 경계에서
+    # 한쪽으로 '자라는' 클러스터의 유사속도 차단 (false stop 근원).
+    fast_max_extent: 2.2
+
     # Let rotation (angular.z) pass through while SLOW/STOP (turn away instead
     # of deadlocking facing an obstacle). Forward/lateral/reverse stay gated.
     pass_rotation_when_blocked: true
+
+    # ── Phase 5 소셜 레이어 (P5-4에서 기본 ON 전환) ────────────────────
+    # 보도 polygon(/perception/sidewalk/boundary) 안에서 gap을 골라 횡방향
+    # (vy) 주입 + 사람 인접 통과 시 속도 캡 + 대면 보행자 YIELD 양보(5b).
+    # 소셜 시나리오 4종(social_*) + P3/P4 회귀가 이 상태로 게이트된다.
+    # 계약 편차 메모: 계획 인터페이스 표의 'polygon timeout 시 정적 YAML
+    # fallback' 소비자 층은 시뮬에서 생략 — 발행 노드(sidewalk_polygon_node)
+    # 자체가 정적 YAML이라 이중화 무의미. 실기체 bringup(P8)에서 소비자
+    # fallback 파라미터 추가 예정. timeout 시 거동: 소셜 비활성(STOP-only).
+    # ⚠ override YAML로 켤 때 수치는 반드시 소수점 표기 (int면 rclpy 타입
+    # 불일치로 노드 기동 실패).
+    social_enable: true
+    social_steering: true   # Nav2 런치는 override로 false (플래너가 횡제어 소유)
+    social_lookahead: 5.0   # blocker 전방 창 (m)
+    social_person_v: 0.3    # 이동 판정 지상 속도 (회전보정 + 자기병진 보상 후)
+    person_min_top: 0.5     # 사람 분류 상단 z (base_link; 지상 ~0.8m — 아동 포함)
+    lat_k: 0.8              # 횡 비례 이득
+    lat_vy_max: 0.2         # 횡 명령 상한 (< gait max_linear_velocity_y 0.25)
 
     # Hysteresis margins (re-entry into safer state requires extra room)
     hysteresis_clearance: 0.30

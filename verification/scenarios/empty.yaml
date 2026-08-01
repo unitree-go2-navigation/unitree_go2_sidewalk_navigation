@@ -3,11 +3,11 @@ name: empty
 actors: []
 launch_args:
   world_init_heading: "3.141593"
-cmd_profile: [[0.0, 0.3, 0.0]]
+cmd_profile: [[0.0, 0.5, 0.0]]
 settle_time: 8.0
-duration: 30.0
+duration: 25.0
 criteria:
   max_collisions: 0
   max_stop_entries: 0
-  min_travel_m: 6.0
+  min_travel_m: 8.5
   forbid_states: [ESTOP]
