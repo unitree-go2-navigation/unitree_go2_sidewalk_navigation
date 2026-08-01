@@ -14,6 +14,7 @@ setup(
             'config/safety_stop.yaml',
             'config/self_filter.yaml',
             'config/sidewalk_polygon.yaml',
+            'config/params_ledger.yaml',
         ]),
     ],
     install_requires=['setuptools'],
