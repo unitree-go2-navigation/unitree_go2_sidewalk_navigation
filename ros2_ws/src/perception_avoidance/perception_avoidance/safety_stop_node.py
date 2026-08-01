@@ -121,6 +121,10 @@ YIELD_SCOPE_X = 10.0
 # ≈ 4~6s + 여유 → 7s. 접근속도 1.2면 8.4m, 0.7이면 4.9m, 0.4면 2.8m.
 YIELD_ENGAGE_T = 9.0       # 심화 목표(1.2m / 실효 0.2 ≈ 6s) + 여유
 YIELD_ENGAGE_VMIN = 0.3    # 조우 시간 분모 하한 (준정지 발산 방지)
+# 발동 거리 상한 (2026-08-01): 8m+ 원거리는 클러스터가 성겨 래치가
+# 끊겼다 붙기를 반복 — 에피소드 3회(8.2→4.8→1.1m) 분절 실측. 추적이
+# 안정한 거리에서만 발동해 "조우당 1회"를 강제.
+YIELD_ENGAGE_XMAX = 6.0
 YIELD_TRIG_FRAMES = 3      # 트리거 지속 프레임 (nogap·mover 채터링 방어)
 # 0.50 (0.30→, 2026-07-31): 다리 스윙 실효 반폭 0.45 + 여유 — 0.30은 몸
 # 중심이 경계-0.30까지 가면 발이 연석 밖을 밟아 도로로 구름 (육안 1회 +
@@ -1025,8 +1029,14 @@ class SafetyStopNode(Node):
         """
         if not self.social_steering and self._social_oncoming is not None:
             lon, _, vlon = self._corr(self._social_oncoming)
-            closing = max(YIELD_ENGAGE_VMIN, -vlon)
-            if lon / closing <= YIELD_ENGAGE_T:
+            # 지상 접근속도 기준 (2026-08-01): 상대속도를 쓰면 로봇이 빠를
+            # 수록 발동이 당겨져 8~12m 조기 양보 (관찰 clr 12~15m YIELD).
+            # 양보 중 로봇은 멈추므로 조우 시점은 액터 지상속도가 결정 —
+            # 0.7m/s 보행자 × 9s ≈ 6.3m에서 발동.
+            ground = max(YIELD_ENGAGE_VMIN,
+                         -(vlon + max(self.robot_vx, 0.0)))
+            if (lon / ground <= YIELD_ENGAGE_T
+                    and lon <= YIELD_ENGAGE_XMAX):
                 no_gap = True
         if self._social_oncoming is None:
             self._yield_frames = 0

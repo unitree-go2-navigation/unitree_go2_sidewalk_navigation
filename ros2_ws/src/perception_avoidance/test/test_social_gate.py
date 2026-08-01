@@ -466,9 +466,10 @@ def test_watchdog_extended_while_approaching(node):
 # --- 시간 기준 양보 발동 (2026-07-30) ---
 
 def test_engage_time_based_far_fast(node):
-    # 빠른 접근(1.4): 8m에서도 조우 5.7s ≤ 7s → 발동
+    # 빠른 접근(1.4): 상한(6m) 안이면 조우 시간 기준으로 발동
+    # (8m 케이스는 거리 상한 도입으로 test_engage_capped_by_distance로 이관)
     node.social_steering = False
-    node._social_oncoming = {'id': 'o', 'x': 8.0, 'y': 0.0, 'vx': -1.4}
+    node._social_oncoming = {'id': 'o', 'x': 5.5, 'y': 0.0, 'vx': -1.4}
     node._band = (-1.3, 1.3)
     node._update_yield(no_gap=False)
     assert node._yield_frames > 0      # 발동 경로 진입 (no_gap 강제됨)
@@ -546,3 +547,26 @@ def test_yield_target_clamped_by_leg_safe_edge(node):
                              'kind': 'person_moving', 'sx': 0.4, 'sy': 0.4}
     node._update_yield(True)
     assert node._yield_target <= 1.5 - 0.50 + 1e-6
+
+
+def test_engage_uses_ground_speed_not_relative(node):
+    # 주행(0.5) 중 준정지 상대: 상대 -1.2지만 지상 -0.7 — 8m에서
+    # 8/0.7=11.4s > 9s → 미발동 (구버전 상대 기준이면 6.7s로 발동)
+    node.social_steering = False
+    node.robot_vx = 0.5
+    node._social_oncoming = {'id': 'o', 'x': 8.0, 'y': 0.0, 'vx': -1.2}
+    node._band = (-1.3, 1.3)
+    node._yield_frames = 0
+    node._update_yield(no_gap=False)
+    assert node._yield_frames == 0
+
+
+def test_engage_capped_by_distance(node):
+    # 지상 접근이 빨라도(1.4) 6m 밖이면 미발동 — 원거리 래치 분절 방지
+    node.social_steering = False
+    node.robot_vx = 0.0
+    node._social_oncoming = {'id': 'o', 'x': 7.5, 'y': 0.0, 'vx': -1.4}
+    node._band = (-1.3, 1.3)
+    node._yield_frames = 0
+    node._update_yield(no_gap=False)
+    assert node._yield_frames == 0
