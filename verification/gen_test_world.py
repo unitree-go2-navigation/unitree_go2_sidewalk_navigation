@@ -149,10 +149,10 @@ for k, ln in enumerate(out):
 # world name 변경
 out = [ln.replace('<world name="small_city"', '<world name="small_city_test"')
        for ln in out]
-# RTF 0.25 캡: L1 GPU 라이다 벽시계 상한 ~2.5Hz(월드 무관, 2026-07-23 실측).
-# 원본은 부하로 자연 RTF~0.5 → 심 시간 L1 ~5Hz였고 P4~P5 튜닝 전제가 그
-# 조건(풀스택 실측 RTF 0.13~0.33). 경량 월드는 RTF 1.0이 되어 심 시간
-# 2.5Hz로 떨어짐 → 동일 운영점(심 L1 ~8Hz) 재현.
+# RTF 0.25 캡 (Phase 3.5 L2 재검토 — 유지): GPU 라이다 벽시계 상한 ~2.5Hz
+# (월드 무관, 2026-07-23 실측). L2 설정(심 5.55Hz)은 0.25에서 벽시계 ~1.39Hz만
+# 요구(여유 ~1.8×) → 심 시간 0.18s 주기가 렌더 병목 없이 성립. RTF 1.0 경량
+# 월드는 심 시간 2.5Hz로 떨어져 sensor_timeout 연발 — 캡 유지.
 out = [ln.replace('<real_time_factor>1</real_time_factor>',
                   '<real_time_factor>0.25</real_time_factor>')
          .replace('<real_time_update_rate>1000</real_time_update_rate>',

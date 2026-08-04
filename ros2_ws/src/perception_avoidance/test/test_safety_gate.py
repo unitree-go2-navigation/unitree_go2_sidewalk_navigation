@@ -276,19 +276,19 @@ def test_nominal_still_transitions_to_stuck(node):
 # --- blind-hold (사각 소실 유지, 2026-07-13 head_on RESUME 관통 수정) ---
 
 def test_blind_hold_keeps_clearance_on_close_vanish(node):
-    # 근접(clr 0.45 ≤ 0.6) 코리도 물체가 어떤 탐지로도 안 이어지고 소실
-    # → 사각 진입 간주, 마지막 관측 clearance 유지 (WAIT 해제 차단)
-    feed(node, [make_det(1.0, 0.0, cfx=0.8)])   # clr = 0.8 - 0.35 = 0.45
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    # 근접(clr 0.25 ≤ 0.3, L2 재유도 문턱) 코리도 물체가 어떤 탐지로도 안
+    # 이어지고 소실 → 사각 진입 간주, 마지막 관측 clearance 유지 (WAIT 해제 차단)
+    feed(node, [make_det(1.0, 0.0, cfx=0.6)])   # clr = 0.6 - 0.35 = 0.25
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
     feed(node, [])
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
     feed(node, [])                               # 재관측 전까지 계속 유지
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
 
 
 def test_blind_hold_released_by_lateral_sighting(node):
     # 같은 물체가 코리도 밖 인근에서 계속 보임 → 옆으로 비켜남 → 해제
-    feed(node, [make_det(1.0, 0.0, cfx=0.8)])
+    feed(node, [make_det(1.0, 0.0, cfx=0.6)])
     feed(node, [make_det(1.0, 0.9, cfx=-1.0)])
     assert math.isinf(node.min_clearance)
     feed(node, [])                               # 이후 소실해도 유지 없음
@@ -296,46 +296,46 @@ def test_blind_hold_released_by_lateral_sighting(node):
 
 
 def test_far_vanish_no_blind_hold(node):
-    # 먼 물체(clr 1.45 > 0.6)의 소실은 사각일 수 없음 → 유지 안 함
+    # 먼 물체(clr 1.45 > 0.3)의 소실은 사각일 수 없음 → 유지 안 함
     feed(node, [make_det(2.0, 0.0)])
     feed(node, [])
     assert math.isinf(node.min_clearance)
 
 
 def test_blind_hold_cleared_by_far_reappearance(node):
-    # 히스테리시스 여유(emergency+hyst=0.9) 밖 재관측 → 진짜 멀어짐 → 해제
-    feed(node, [make_det(1.0, 0.0, cfx=0.8)])
+    # 히스테리시스 여유(emergency+hyst=0.6) 밖 재관측 → 진짜 멀어짐 → 해제
+    feed(node, [make_det(1.0, 0.0, cfx=0.6)])
     feed(node, [])
-    feed(node, [make_det(1.7, 0.0, cfx=1.4)])   # clr 1.05 > 0.9
+    feed(node, [make_det(1.7, 0.0, cfx=1.4)])   # clr 1.05 > 0.6
     assert node.min_clearance == pytest.approx(1.05, abs=1e-6)
     feed(node, [])
     assert math.isinf(node.min_clearance)
 
 
 def test_blind_hold_survives_boundary_flicker(node):
-    # 사각 경계 깜빡임: 0.6<clr≤0.9 대역의 실측 한 프레임은 hold를 풀지 않음
+    # 사각 경계 깜빡임: 0.3<clr≤0.6 대역의 실측 한 프레임은 hold를 풀지 않음
     # (풀면 다음 소실 프레임 inf → WAIT clear 누적 → RESUME 관통, trial2)
-    feed(node, [make_det(1.0, 0.0, cfx=0.8)])   # clr 0.45 → hold
-    feed(node, [make_det(1.2, 0.0, cfx=1.0)])   # clr 0.65 실측 (깜빡 가시)
-    assert node.min_clearance == pytest.approx(0.65, abs=1e-6)
-    feed(node, [])                               # 다시 소실 → phantom 유지
+    feed(node, [make_det(1.0, 0.0, cfx=0.6)])   # clr 0.25 → hold
+    feed(node, [make_det(1.2, 0.0, cfx=0.8)])   # clr 0.45 실측 (깜빡 가시)
     assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    feed(node, [])                               # 다시 소실 → phantom 유지
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
 
 
 def test_blind_hold_not_released_by_straddling_remnant(node):
     # 사각에 잠긴 몸의 실루엣 가장자리(정면 근처, 코리도 점 없음)는 "비켜남"이
     # 아니다 → 유지 지속 (head_on trial3 RESUME 관통 회귀 케이스)
-    feed(node, [make_det(1.0, 0.0, cfx=0.8)])   # clr 0.45 → hold 설정
+    feed(node, [make_det(1.0, 0.0, cfx=0.6)])   # clr 0.25 → hold 설정
     feed(node, [make_det(1.0, 0.25, sy=0.5, cfx=-1.0)])  # 정면 걸침 잔여
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
     feed(node, [])                               # 완전 소실 시에도 유지
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
 
 
 def test_wait_state_keeps_stop_hysteresis(node):
-    # WAIT도 STOP 히스테리시스 유지 — clr 0.7 (emergency 0.6 + hyst 0.3 미만)
+    # WAIT도 STOP 히스테리시스 유지 — clr 0.5 (emergency 0.3 + hyst 0.3 미만)
     # 이면 아직 in_stop → RESUME 돌진 사이클 방지
-    feed(node, [make_det(1.4, 0.0, cfx=1.05)])   # clr = 1.05 - 0.35 = 0.70
+    feed(node, [make_det(1.2, 0.0, cfx=0.85)])   # clr = 0.85 - 0.35 = 0.50
     node.state = State.WAIT
     in_stop, _ = node._danger_levels()
     assert in_stop
@@ -346,16 +346,16 @@ def test_wait_state_keeps_stop_hysteresis(node):
 
 def test_blind_hold_ignores_other_track_aside(node):
     # 다른 track id(예: 인도변 울타리)의 측면 탐지로는 hold가 풀리지 않음
-    feed(node, [make_det(1.0, 0.0, cfx=0.8, det_id='7')])
+    feed(node, [make_det(1.0, 0.0, cfx=0.6, det_id='7')])
     feed(node, [make_det(1.0, 0.9, cfx=-1.0, det_id='9')])
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
 
 
 def test_blind_hold_predicted_exit_releases_crossing(node):
     # 횡속도가 있던 물체(횡단 보행자)는 예측 이탈 시각+1s 후 해제 (동결 방지)
-    feed(node, [make_det(1.0, 0.0, vy=0.12, cfx=0.8, det_id='3')])
+    feed(node, [make_det(1.0, 0.0, vy=0.12, cfx=0.6, det_id='3')])
     feed(node, [])
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)  # 아직 유지
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)  # 아직 유지
     node._blind_hold['t'] -= 20.0                               # 예측 시각 경과
     feed(node, [])
     assert math.isinf(node.min_clearance)
@@ -363,20 +363,20 @@ def test_blind_hold_predicted_exit_releases_crossing(node):
 
 def test_blind_hold_never_expires_without_lateral_velocity(node):
     # 횡속도 없는 물체(정면 접근/정지)는 시간 경과로 풀리지 않음 (fail-safe)
-    feed(node, [make_det(1.0, 0.0, vy=0.0, cfx=0.8, det_id='3')])
+    feed(node, [make_det(1.0, 0.0, vy=0.0, cfx=0.6, det_id='3')])
     feed(node, [])
     node._blind_hold['t'] -= 1000.0
     feed(node, [])
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
 
 
 def test_blind_hold_inherits_lateral_velocity_memory(node):
     # track 단절 직후 vy=0 프레임으로 갱신돼도 이전 hold의 유효 횡속도를 승계
     # → 예측 이탈(③)이 살아 있어 동결되지 않음 (crossing 3/5 freeze 회귀)
-    feed(node, [make_det(1.0, 0.0, vy=0.12, cfx=0.8, det_id='3')])
-    feed(node, [make_det(1.0, 0.1, vy=0.0, cfx=0.8, det_id='8')])  # 재추적 프레임
+    feed(node, [make_det(1.0, 0.0, vy=0.12, cfx=0.6, det_id='3')])
+    feed(node, [make_det(1.0, 0.1, vy=0.0, cfx=0.6, det_id='8')])  # 재추적 프레임
     feed(node, [])
-    assert node.min_clearance == pytest.approx(0.45, abs=1e-6)
+    assert node.min_clearance == pytest.approx(0.25, abs=1e-6)
     node._blind_hold['t'] -= 20.0
     feed(node, [])
     assert math.isinf(node.min_clearance)   # 승계된 vy로 예측 이탈 해제
@@ -487,10 +487,11 @@ def test_latency_compensation_advances_fast_object(node):
 
 
 def test_latency_clamped_to_max(node):
-    # stamp가 비정상적으로 과거(10s)여도 전파는 cvm_latency_max(0.3s)로 제한
+    # stamp가 비정상적으로 과거(10s)여도 전파는 cvm_latency_max(0.5s, L2 재유도)
+    # 로 제한 — 10.5m, 5m/s: 전파 2.5m → x 8.0 → t_cpa 1.6
     for _ in range(4):
         feed(node, [make_det(10.5, 0.0, vx=-5.0, det_id='9')], stamp_lag=10.0)
-    assert node.min_fast_tcpa == pytest.approx(1.8, abs=0.05)
+    assert node.min_fast_tcpa == pytest.approx(1.6, abs=0.05)
 
 
 def test_clutter_velocity_spike_filtered_by_persistence(node):

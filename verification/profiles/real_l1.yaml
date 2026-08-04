@@ -1,3 +1,8 @@
+# status: DEPRECATED (Phase 3.5, L1→L2 — 계획 v3.1.1 §6.5)
+# v2 회귀 결과 재현 전용: 시뮬 센서를 lidar_gen:=l1(10Hz/0.8m/600×30)로 되돌려
+# 함께 쓸 것. 기본 시뮬(l2, L2 공칭 포인트율)에 그대로 얹으면 이중 열화가 된다.
+# 현행 게이트는 real_l2.yaml 사용.
+#
 # 실제 Unitree L1 근사 프로파일 (sim2real 회귀 게이트용).
 # 근거: L1 비반복 스캔 21,600 pts/s(시뮬 균일 링 대비 ~1/5 밀도),
 # cm급 range jitter, 저반사면 dropout, 파이프라인 지연 ~100ms.

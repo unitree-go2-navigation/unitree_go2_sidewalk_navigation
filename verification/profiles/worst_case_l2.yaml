@@ -1,0 +1,10 @@
+# L2 최악 조건 프로파일 (Phase 3.5): 어두운/젖은 노면, 원거리 희소, 통신 지연 상한.
+# 구판 worst_case.yaml(density 0.10)은 시뮬이 L1보다 ~5배 조밀하던 시절 기준 —
+# 시뮬 센서가 L2 공칭 포인트율로 내려온 지금 0.10은 실기 최악보다 과혹.
+# 0.5×(1-0.2) = 유효 40% ≈ 우천·저반사 혼합 최악 가정 (측정 7A로 재작성 예정).
+degrade_pointcloud_node:
+  ros__parameters:
+    density_keep_ratio: 0.50
+    dropout_ratio: 0.20
+    range_noise_std: 0.05
+    latency_s: 0.20

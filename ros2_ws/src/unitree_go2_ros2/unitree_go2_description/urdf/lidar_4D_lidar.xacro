@@ -36,27 +36,42 @@
         <origin rpy="2.879 0.0 1.5705" xyz="0.25 -0.038 -0.03"/>
     </joint>
 
+    <!-- 센서 세대 스위치 (Phase 3.5, 계획 v3.1.1 §6.6): 기본 l2.
+         L1↔L2 델타 재현(l1_to_l2_delta.md)용으로 lidar_gen:=l1 을 남긴다.
+         l1 값(10 Hz / 0.8~30 m / 600×30)은 v2 시뮬 설정 보존용 — 0.8 m는
+         URDF 설정값이지 L1 데이터시트 블라인드가 아님 (§1.2 v3.1 정정).
+         l2 값: 수평 5.55 Hz, 근거리 0.05 m, 480×24×5.55 ≈ 63,936 pts/s
+         ≈ 유효 64,000 pts/s (데이터시트, PROVISIONAL — 측정 5로 확정).
+         비반복 스캔·반사율 dropout·밀도 불균일은 gz 라이다로 표현 불가 →
+         degrade 노드 real_l2 프로파일 담당 (§6.5). -->
+    <xacro:arg name="lidar_gen" default="l2"/>
+    <xacro:property name="lidar_gen_v" value="$(arg lidar_gen)"/>
+    <xacro:property name="lidar_rate" value="${10 if lidar_gen_v == 'l1' else 5.55}"/>
+    <xacro:property name="lidar_h_samples" value="${600 if lidar_gen_v == 'l1' else 480}"/>
+    <xacro:property name="lidar_v_samples" value="${30 if lidar_gen_v == 'l1' else 24}"/>
+    <xacro:property name="lidar_min_range" value="${0.8 if lidar_gen_v == 'l1' else 0.05}"/>
+
     <gazebo reference="lidar_l1_link">
         <sensor name="lidar_l1" type="gpu_lidar">
             <topic>unitree_lidar</topic>
-            <update_rate>10</update_rate>
+            <update_rate>${lidar_rate}</update_rate>
             <lidar>
                 <scan>
                     <horizontal>
-                        <samples>600</samples>
+                        <samples>${lidar_h_samples}</samples>
                         <resolution>1</resolution>
                         <min_angle>-3.14159</min_angle>
                         <max_angle>3.14159</max_angle>
                     </horizontal>
                     <vertical>
-                        <samples>30</samples>
+                        <samples>${lidar_v_samples}</samples>
                         <resolution>1</resolution>
                         <min_angle>-0.785398</min_angle>
                         <max_angle>0.785398</max_angle>
                     </vertical>
                 </scan>
                 <range>
-                    <min>0.8</min>
+                    <min>${lidar_min_range}</min>
                     <max>30.0</max>
                     <resolution>0.001</resolution>
                 </range>

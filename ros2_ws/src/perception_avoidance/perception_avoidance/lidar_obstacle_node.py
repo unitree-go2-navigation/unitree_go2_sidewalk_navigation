@@ -78,8 +78,10 @@ class LidarObstacleNode(Node):
         self.declare_parameter('roi_y_max', 3.0)
         self.declare_parameter('roi_z_min', -0.3)
         self.declare_parameter('roi_z_max', 1.2)
-        self.declare_parameter('self_x_min', -0.4)
-        self.declare_parameter('self_x_max',  0.4)
+        # ∓0.45 (Phase 3.5): L2 min_range 0.05에서 self box가 하중을 받음 —
+        # 몸통 반장 0.35 + 다리 전후 스윙·마운트 돌출 0.10 (self_filter.yaml).
+        self.declare_parameter('self_x_min', -0.45)
+        self.declare_parameter('self_x_max',  0.45)
         self.declare_parameter('self_y_min', -0.3)
         self.declare_parameter('self_y_max',  0.3)
         self.declare_parameter('self_z_min', -0.5)
@@ -94,13 +96,18 @@ class LidarObstacleNode(Node):
         self.declare_parameter('points_topic', '/unitree_lidar/points')
         self.declare_parameter('target_frame', 'base_link')
         self.declare_parameter('output_topic', '/obstacles/lidar')
-        self.declare_parameter('publish_rate', 10.0)
+        # L2 수평 스캔 5.55Hz와 동일 (Phase 3.5, 10.0→5.55).
+        self.declare_parameter('publish_rate', 5.55)
         # Velocity (frame-to-frame tracking) — Phase 1 relative-velocity TTC input.
         self.declare_parameter('vel_topic', '/obstacles/lidar/velocity')
-        self.declare_parameter('assoc_max_dist', 1.6)
+        # 2.2 (Phase 3.5, 1.6→2.2): L2 5.55Hz 프레임당 변위 재유도 (self_filter.yaml).
+        self.declare_parameter('assoc_max_dist', 2.2)
         self.declare_parameter('vel_alpha', 0.5)
         self.declare_parameter('vel_min_dt', 0.02)
-        self.declare_parameter('vel_max_dt', 0.5)
+        # 0.8 (Phase 3.5, 0.5→0.8): 코스팅 상한(track_coast_frames 3) 직후 재연관
+        # 시 dtm = 4×T_frame = 0.72s — 이보다 작으면 속도 갱신이 조용히 스킵돼
+        # 스테일 속도가 유지됨. (coast+1)×0.18 + 여유.
+        self.declare_parameter('vel_max_dt', 0.8)
         # 미매칭 track 유지(코스팅) 한도 (연속 프레임 수). 열화(dropout) 한두
         # 프레임에 track이 죽으면 id·속도가 리셋돼 게이트의 fast 트리거 지속
         # 카운트가 영원히 미달 (real_l1 4m/s STOP 미진입 원인). 코스팅 track은

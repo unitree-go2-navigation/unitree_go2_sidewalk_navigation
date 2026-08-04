@@ -194,6 +194,21 @@ def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
 
+    # RTF 0.25 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6).
+    # 원본 small_city.sdf에는 캡이 없어 머신이 한가하면 RTF가 떠오르고(실측
+    # 0.50), 요구 벽시계 렌더율이 GPU 라이다 상한(~2.5Hz)을 넘어 심시간 라이다
+    # 주기가 붕괴한다(실측 ~1.4~1.7Hz). L1 시절엔 풀스택 부하가 RTF를
+    # 0.13~0.33으로 눌러줘 우연히 성립했을 뿐이라 캡이 명시돼 있지 않았다.
+    # 0.25 캡에서 L2 5.55Hz는 심시간 주기 중앙값 0.180s로 정합.
+    # A/B 실측 (2026-08-04, static_stop, 클린 환경):
+    #   캡 O → PASS  SLOW_DOWN 진입, min_clr 0.409
+    #   캡 X → FAIL  SLOW_DOWN 미진입, 보행자를 0.316m로 스쳐 지나감
+    # 즉 캡은 성능 편의가 아니라 게이트 성립 조건이다. 게이트 튜닝은 이 운영점 기준.
+    sdf = sdf.replace('<real_time_factor>1</real_time_factor>',
+                      '<real_time_factor>0.25</real_time_factor>')
+    sdf = sdf.replace('<real_time_update_rate>1000</real_time_update_rate>',
+                      '<real_time_update_rate>250</real_time_update_rate>')
+
     n_removed = len(ACTOR_BLOCK_RE.findall(sdf))
     sdf = ACTOR_BLOCK_RE.sub('', sdf)
 

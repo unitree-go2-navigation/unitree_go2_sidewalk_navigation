@@ -239,10 +239,11 @@ class SafetyStopNode(Node):
         # this small margin. Larger-distance reaction is TTC-driven (only when
         # actually approaching), so a static obstacle the robot merely rotates
         # past (closing≈0 → TTC=inf) does not force STOP.
-        # emergency + robot_half_length는 lidar min range(0.8m)보다 여유 있게
-        # 커야 한다 — 결정 경계가 센서 사각지대에 겹치면 최근접점 소실로
-        # STOP을 놓치고 관통한다 (safety_stop.yaml 주석 참조)
-        self.declare_parameter('emergency_clearance', 0.60)
+        # emergency + robot_half_length는 근거리 사각 경계(L2에서는 센서
+        # min_range가 아니라 ROI 크롭 roi_x_min 0.5)보다 여유 있게 커야 한다 —
+        # 결정 경계가 사각과 겹치면 최근접점 소실로 STOP을 놓치고 관통한다.
+        # 0.30 (Phase 3.5 L2 재유도, 0.60→0.30 — safety_stop.yaml 주석 참조)
+        self.declare_parameter('emergency_clearance', 0.30)
         # SLOW 스케일 영점을 emergency보다 이만큼 아래로 → creep이 STOP 문턱을
         # 관통해 래치됨 (영점==문턱이면 점근 접근으로 STOP이 영원히 안 걸림)
         self.declare_parameter('creep_overshoot', 0.10)
@@ -257,8 +258,9 @@ class SafetyStopNode(Node):
         # RESUME이 사각을 향해 재진입→관통 (2026-07-13 head_on 충돌 2건:
         # 초저속(<closing_eps) 접근 보행자가 사각 경계에서 깜빡임). 옆으로
         # 비켜난 경우(코리도 밖 인근에서 계속 탐지)는 해제.
-        # min_range 0.8 − half_length 0.35 + margin 0.15 = 0.60.
-        self.declare_parameter('blind_hold_clearance', 0.60)
+        # 0.30 (Phase 3.5 L2 재유도): 소실 경계 = ROI 크롭 roi_x_min 0.5 →
+        # clearance 0.15, + margin 0.15 = 0.30 (safety_stop.yaml 주석 참조).
+        self.declare_parameter('blind_hold_clearance', 0.30)
         # Min closing speed (m/s) to treat an obstacle as approaching
         self.declare_parameter('closing_eps', 0.05)
 
@@ -286,7 +288,9 @@ class SafetyStopNode(Node):
         # 메시지별 실측)만큼 fast 물체를 CVM 전방 전파. 5m/s에서 지연 0.15s =
         # 위치 오차 0.75m — fast 경로에만 적용 (저속/정적은 기존 마진이 흡수,
         # 클러터의 노이즈 속도로 clearance를 오염시키지 않기 위함).
-        self.declare_parameter('cvm_latency_max', 0.3)
+        # 0.5 (Phase 3.5, 0.3→0.5): L2 T_frame 0.18 + 열화 latency 0.1 +
+        # 처리 지연이 0.3을 클립 (safety_stop.yaml 주석 참조).
+        self.declare_parameter('cvm_latency_max', 0.5)
         # fast 트리거 지속 조건 (감쇠 카운트 문턱, 같은 track id): 정적
         # 클러터(울타리 등 확장 물체)의 centroid 요동이 만드는 단발 속도
         # 스파이크(실측 최대 ~8m/s, 방향 무작위)가 유령 STOP을 만들지 않도록.
@@ -326,8 +330,9 @@ class SafetyStopNode(Node):
         self.declare_parameter('wait_clear_duration', 1.0)
         self.declare_parameter('resume_time', 1.5)
 
-        # Timeout
-        self.declare_parameter('sensor_timeout', 0.5)
+        # Timeout — 0.9 (Phase 3.5, 0.5→0.9): 5프레임 × L2 T_frame 0.18
+        # (safety_stop.yaml 주석 참조).
+        self.declare_parameter('sensor_timeout', 0.9)
 
         # Rate
         self.declare_parameter('control_rate', 50.0)

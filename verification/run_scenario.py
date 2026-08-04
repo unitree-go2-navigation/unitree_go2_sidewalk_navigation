@@ -41,14 +41,28 @@ def load_scenario(path):
         return yaml.safe_load(f)
 
 
+# 스택 전체를 정리해야 한다. gz/bridge만 죽이면 launch가 SIGINT에 완전히
+# 죽지 않은 경우 파이썬 노드가 살아남아 다음 trial과 같은 ROS 그래프에서
+# 계속 발행한다 — 게이트가 이전 시뮬의 장애물을 보고 STOP/STUCK을 난사해
+# 판정이 통째로 오염된다 (2026-08-04 Phase 3.5 재기준화 중 실측: 유령
+# 노드가 34분 생존, stops=145·travel 1.7m로 baseline 재현 실패).
+# ⚠ cmd_publisher(드라이버)는 포함하지 않는다 — 실행 중 자기 자신을 죽인다.
+LEFTOVER_PATTERNS = [
+    'gz sim', 'parameter_bridge', 'quadruped_controller_node',
+    'robot_state_publisher', 'lidar_obstacle_node', 'safety_stop_node',
+    'collision_oracle_node', 'sidewalk_polygon_node',
+    'degrade_pointcloud_node', 'odom_tf_broadcaster',
+]
+
+
 def kill_gazebo_leftovers():
-    subprocess.run(['pkill', '-f', 'gz sim'], check=False)
-    subprocess.run(['pkill', '-f', 'parameter_bridge'], check=False)
+    for pat in LEFTOVER_PATTERNS:
+        subprocess.run(['pkill', '-f', pat], check=False)
     time.sleep(2.0)
     # 웨지된 gz 서버는 SIGTERM을 무시하고 살아남아 다음 trial의
     # /controller_manager 서비스를 오염시킴 — SIGKILL로 격상
-    subprocess.run(['pkill', '-9', '-f', 'gz sim'], check=False)
-    subprocess.run(['pkill', '-9', '-f', 'parameter_bridge'], check=False)
+    for pat in LEFTOVER_PATTERNS:
+        subprocess.run(['pkill', '-9', '-f', pat], check=False)
     time.sleep(1.0)
 
 

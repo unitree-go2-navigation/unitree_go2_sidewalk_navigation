@@ -37,8 +37,8 @@ def test_track_id_persists_across_frames(node):
 
 def test_beyond_assoc_max_dist_new_track(node):
     r1 = node._associate([(1.0, 0.0, 0.5)], stamp_s=10.0)
-    # jumped 2m > assoc_max_dist(1.0) → new id, velocity reset
-    r2 = node._associate([(3.0, 0.0, 0.5)], stamp_s=10.1)
+    # jumped 3m > assoc_max_dist(2.2, L2 재유도) → new id, velocity reset
+    r2 = node._associate([(4.0, 0.0, 0.5)], stamp_s=10.1)
     assert r1[0][0] != r2[0][0]
     assert r2[0][1] == 0.0
 
@@ -46,7 +46,7 @@ def test_beyond_assoc_max_dist_new_track(node):
 def test_out_of_range_dt_keeps_previous_velocity(node):
     node._associate([(1.0, 0.0, 0.5)], stamp_s=10.0)
     node._associate([(1.1, 0.0, 0.5)], stamp_s=10.1)      # v → 0.5
-    # dt=1.0 > vel_max_dt(0.5): velocity must not be recomputed from the jump
+    # dt=1.0 > vel_max_dt(0.8, L2 재유도): velocity must not be recomputed from the jump
     results = node._associate([(1.2, 0.0, 0.5)], stamp_s=11.1)
     assert results[0][1] == pytest.approx(0.5, abs=1e-6)
 
