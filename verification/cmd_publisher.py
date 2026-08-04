@@ -102,8 +102,11 @@ class ScenarioDriver(Node):
         return True
 
     def run(self):
+        # 300s (Phase 3.5, 180→300): RTF 0.25 운영점에서 준비 완료(첫 라이다
+        # 프레임까지)에 필요한 sim time 이 그대로 4배의 벽시계가 된다. 머신
+        # 경합이 겹치면 180s 를 넘겨 기동 실패로 오기록됐다.
         if not self._spin_until(
-                lambda: self.odom_ready and self.obs_ready, 180.0):
+                lambda: self.odom_ready and self.obs_ready, 300.0):
             self.get_logger().error('readiness timeout (/odom, /obstacles/lidar)')
             return 2
         self.get_logger().info('stack ready — settling')

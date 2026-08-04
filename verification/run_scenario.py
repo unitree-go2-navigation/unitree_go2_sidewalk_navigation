@@ -42,16 +42,38 @@ def load_scenario(path):
 
 
 # 스택 전체를 정리해야 한다. gz/bridge만 죽이면 launch가 SIGINT에 완전히
-# 죽지 않은 경우 파이썬 노드가 살아남아 다음 trial과 같은 ROS 그래프에서
-# 계속 발행한다 — 게이트가 이전 시뮬의 장애물을 보고 STOP/STUCK을 난사해
-# 판정이 통째로 오염된다 (2026-08-04 Phase 3.5 재기준화 중 실측: 유령
-# 노드가 34분 생존, stops=145·travel 1.7m로 baseline 재현 실패).
+# 죽지 않은 경우 나머지 노드가 살아남아 다음 trial과 같은 ROS 그래프에서
+# 계속 발행한다. 두 가지 형태로 나타난다 (2026-08-04 Phase 3.5 재기준화 실측):
+#   · 지각/게이트 노드 생존 → 이전 시뮬의 장애물로 STOP/STUCK 난사
+#     (유령 노드 34분 생존, static_stop travel 0.00m·대조군 stops=145)
+#   · TF/odom 발행 노드(ekf_node, state_estimation_node,
+#     robot_state_publisher, static_transform_publisher) 생존 → 다음 trial의
+#     TF 트리 오염 → /obstacles/lidar 가 영영 안 나옴 → readiness timeout.
+#     한 번 발생하면 이후 모든 trial 이 연쇄 실패한다 (bike_pass·crossing
+#     10연속 FAIL → 정리 후 단독 실행은 PASS 로 확인)
+#
+# 목록은 launch 파일의 executable= 전수와 일치해야 한다 —
+# test_harness_cleanup.py 가 드리프트를 차단한다.
 # ⚠ cmd_publisher(드라이버)는 포함하지 않는다 — 실행 중 자기 자신을 죽인다.
+# ⚠ 'create'/'spawner' 같은 흔한 이름은 반드시 경로째로 매칭한다.
 LEFTOVER_PATTERNS = [
-    'gz sim', 'parameter_bridge', 'quadruped_controller_node',
-    'robot_state_publisher', 'lidar_obstacle_node', 'safety_stop_node',
-    'collision_oracle_node', 'sidewalk_polygon_node',
-    'degrade_pointcloud_node', 'odom_tf_broadcaster',
+    'gz sim',
+    'parameter_bridge',
+    'ros_gz_sim/create',
+    'controller_manager/spawner',
+    'quadruped_controller_node',
+    'state_estimation_node',
+    'heading_correction_node',
+    'robot_state_publisher',
+    'static_transform_publisher',
+    'ekf_node',
+    'lidar_obstacle_node',
+    'safety_stop_node',
+    'collision_oracle_node',
+    'sidewalk_polygon_node',
+    'degrade_pointcloud_node',
+    'odom_tf_broadcaster',
+    'list_controllers',   # 기동 점검용 bash 프로브 — 웨지된 채 남는 것 실측
 ]
 
 
@@ -91,7 +113,16 @@ def run_trial(scenario, trial_idx, degrade_profile, log, gui=False):
 
     settle = float(scenario.get('settle_time', 8.0))
     duration = float(scenario['duration'])
-    wall_cap = 60 + 4 * (settle + duration)
+    # 드라이버는 sim time 으로 settle/duration 을 재생하므로 필요한 벽시계는
+    # (settle+duration)/RTF 다. 앞의 상수는 기동(gz 스폰 + 컨트롤러 + 첫 라이다
+    # 프레임) 몫으로, 드라이버 자신의 readiness 상한(cmd_publisher 300s)보다
+    # 커야 한다 — 구판 60은 하네스가 드라이버보다 먼저 끊어 기동이 느린 trial
+    # 을 판정 실패가 아니라 인프라 실패로 기록했다.
+    # 배수 8: RTF 0.25 는 캡이지 하한이 아니다. 머신이 못 따라가면 실제 RTF 가
+    # 그 아래로 떨어지고, 특히 bike 시나리오(GLB 자전거 메시)는 GPU 라이다
+    # 부하가 커 실측 RTF 가 0.07 까지 내려갔다 (33s 시뮬에 462s 초과 — 4배로는
+    # 부족). 여유는 웨지된 trial 에서만 비용이 되므로 넉넉히 잡는다.
+    wall_cap = 330 + 8 * (settle + duration)
 
     log.write(f"launch: {' '.join(launch_cmd)}\n")
     launch_log = open(os.path.join(run_dir, 'launch.log'), 'w')
