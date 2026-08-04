@@ -59,6 +59,8 @@ def generate_launch_description():
                 'degrade_profile': LaunchConfiguration('degrade_profile'),
                 'cameras_enabled': LaunchConfiguration('cameras_enabled'),
                 'band_source': LaunchConfiguration('band_source'),
+                'sidewalk_polygon_extra_params': LaunchConfiguration(
+                    'sidewalk_polygon_extra_params'),
                 # Nav2가 횡제어 소유 → 소셜 레이어 OFF (두 횡제어기 충돌
                 # 방지; 게이트는 안전 본연 역할 유지)
                 'safety_stop_extra_params': os.path.join(
@@ -160,6 +162,8 @@ def generate_launch_description():
         # 사전 주입 최소화 방침(2026-07-29)에 따라 lidar 권장; config는
         # 러너 회귀 재현성용 유지.
         DeclareLaunchArgument('band_source', default_value='config'),
+        # 보도 폭이 다른 월드용 밴드 override (w5 → sidewalk_polygon_w5.yaml).
+        DeclareLaunchArgument('sidewalk_polygon_extra_params', default_value=''),
         base,
         nav_rviz,
         odom_tf,

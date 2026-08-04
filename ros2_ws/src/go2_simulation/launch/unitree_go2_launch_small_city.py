@@ -321,6 +321,13 @@ def generate_launch_description():
     # /odom이 월드 좌표로 초기화되는 스택이라 스폰 인자 전달 불필요.
     sidewalk_polygon_yaml = os.path.join(
         perception_avoidance, 'config/sidewalk_polygon.yaml')
+    # 밴드 override yaml (빈 문자열 = 없음). 기본 yaml 위에 겹쳐 로드 —
+    # 보도 폭이 다른 월드(w5: sidewalk_polygon_w5.yaml)를 본 설정 파일
+    # 수정 없이 주입. 기본값은 3m 보도(small_city.sdf) 기준 유지.
+    declare_sidewalk_polygon_extra = DeclareLaunchArgument(
+        "sidewalk_polygon_extra_params", default_value="",
+        description="Optional extra params YAML layered over sidewalk_polygon.yaml")
+    sidewalk_polygon_extra = LaunchConfiguration('sidewalk_polygon_extra_params')
     sidewalk_polygon_node = Node(
         package='perception_avoidance',
         executable='sidewalk_polygon_node',
@@ -331,6 +338,8 @@ def generate_launch_description():
             {'use_sim_time': use_sim_time},
             # config = 월드 고정 YAML(결정적, 회귀용) / lidar = 실시간 추정
             {'band_source': LaunchConfiguration('band_source')},
+            PythonExpression(["'", sidewalk_polygon_extra, "' or '",
+                              sidewalk_polygon_yaml, "'"]),
         ],
     )
 
@@ -500,6 +509,7 @@ def generate_launch_description():
             declare_description_path,
             declare_cameras_enabled,
             declare_band_source,
+            declare_sidewalk_polygon_extra,
             gazebo_resource_path,
             small_city_sdf_path,
             gazebo_plugin_path,

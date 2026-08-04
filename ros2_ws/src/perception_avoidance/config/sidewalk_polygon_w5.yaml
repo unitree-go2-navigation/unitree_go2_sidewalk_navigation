@@ -1,0 +1,11 @@
+# sidewalk_polygon.yaml 위에 겹쳐 로드하는 override — 보도 폭 5m 월드
+# (small_city_test_w5.sdf) 전용.  기본 yaml은 3m 보도(small_city.sdf) 기준
+# 이라 남측 한계가 3.7이며, 그대로 두면 w5의 남쪽 절반(y 1.9~3.7)이 보도
+# 밖으로 판정돼 남측 게이트가 통과 후보에서 제외된다.
+#
+# 남측 1.9: w5 sidewalk_16의 물리 외곽 y=1.7(연석)에서 0.2m 안쪽.  북측
+# 6.35는 기본 yaml과 동일 근거(상가 전면부가 y≥6.5를 점유)라 그대로 둔다.
+# polygon_x는 기본 yaml과 같으므로 재선언하지 않는다.
+sidewalk_polygon_node:
+  ros__parameters:
+    polygon_y: [1.9, 1.9, 6.35, 6.35]
