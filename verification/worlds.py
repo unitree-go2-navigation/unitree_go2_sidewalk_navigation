@@ -125,6 +125,12 @@ BOX_TEMPLATE = """    <model name="{name}">
 
 ACTOR_BLOCK_RE = re.compile(r'[ \t]*<actor\b.*?</actor>\n', re.DOTALL)
 
+# 회귀 운영점 (generate_world 주석 참조).
+# ⚠ 이 값은 라이다가 아니라 **보행 제어 충실도**가 결정한다 — 올리면 심시간
+# 기준 gait 제어율이 그만큼 떨어져 거동이 바뀐다. 0.45 등가성 검증 실패
+# (l1_to_l2_delta §3.2). 바꾸려면 전 시나리오 재기준화가 필요하다.
+RTF_CAP = 0.25
+
 MIN_SEGMENT_DIST = 0.05   # m
 MIN_SEGMENT_SPEED = 0.02  # m/s
 
@@ -194,37 +200,58 @@ def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
 
-    # RTF 0.25 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6) — 목적은 **운영점 고정**.
+    # RTF 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6) — 목적은 **운영점 고정**.
     #
-    # 맞춰야 하는 것은 RTF 가 아니라 심시간 라이다 주기(L2 = 0.18 s)다. 관계는
-    #     심시간 라이다 주파수 = C / RTF      (C = GPU 벽시계 라이다 렌더율)
-    # 이므로 5.55 Hz 를 얻으려면 RTF <= C / 5.55 여야 한다.
+    # 출발점은 센서였다: 라이다 update_rate 5.55 는 심 시간 기준 설정값이고,
+    # 게이트 파라미터(TTC·sensor_timeout·fast_trig_frames)도 전부 심 시간 위에서
+    # 돌며, 실기 L2 가 벽시계 5.55 Hz 이므로 시뮬도 심 시간 기준 5.55 Hz 여야 한다.
+    # 그러나 실측해 보니 **캡을 결정하는 것은 센서가 아니라 로코모션**이었다
+    # (측정 1 vs 측정 2).
     #
-    # 실측 (2026-08-05, 클린 환경, 원본 월드 = 캡 없음):
-    #     실측 RTF 0.617 · 심시간 주기 median/p90 0.180 s → 5.56 Hz (설정값 그대로)
-    #   → C >= 5.55 * 0.617 ~= 3.4 Hz, 허용 상한 RTF <= ~0.61
-    # 즉 이 머신은 캡 없이도 목표 주기가 나오지만, 자연 안착 RTF(0.617)가 상한에
-    # 거의 걸쳐 있어 부하가 늘면 C 가 떨어지며 주기가 무너진다. 캡은 그 마진을
-    # 사는 것이고, 부하와 무관하게 회귀 운영점을 재현 가능하게 만든다.
+    # 측정 1 — 라이다는 캡을 요구하지 않는다
+    # (2026-08-05, 클린, bike_pass 월드 = GLB 메시 + actor, 최대 부하):
+    #     설정 RTF   실효 RTF   심시간 주기 median/p90
+    #       0.25       0.249        0.180 / 0.180
+    #       0.45       0.442        0.180 / 0.180
+    #       0.60       0.560        0.180 / 0.180
+    #       1.0(무제한) 0.672        0.180 / 0.180
+    # 어느 지점에서도 주기가 열화되지 않는다. gz 는 렌더가 밀리면 프레임을
+    # 버리는 게 아니라 **시뮬 전체를 늦춰** 센서 스케줄을 지키므로, 한계가
+    # "주기 열화"가 아니라 "RTF 포화(이 머신 0.672)"로 나타난다.
     #
-    # ⚠ 정정: 이전 판 주석은 "캡 없으면 심시간 1.4 Hz 로 붕괴 / 캡이 게이트 성립
-    # 조건"이라고 적었으나 **둘 다 오염된 측정이었다** — 당시 정리 목록에
-    # ekf_node·state_estimation_node 가 빠져 유령 노드가 살아 있었다.
-    # 완전 정리 후 A/B (static_stop N=3): 캡 O 0/3(이격 0.292~0.353) ·
-    # 캡 X 0/3(0.302~0.343) — 판정·이격 모두 구분 불가. 캡은 게이트 성립 조건이
-    # 아니다. (static_stop 자체의 실패는 캡과 무관한 거동 변화 — l1_to_l2_delta §5.2)
+    # 측정 2 — 🔴 캡을 결정하는 것은 **보행 제어 충실도**다
+    # CHAMP quadruped_controller 는 joint 명령을 **벽시계 고정 ~200 Hz** 로
+    # 낸다 (심 시간 기준이 아니다). 따라서 심시간 실효 제어율이 RTF 에 반비례한다:
+    #     RTF 0.25 → 벽시계 200.3 Hz → 심시간 809 Hz
+    #     RTF 0.45 → 벽시계 201.3 Hz → 심시간 462 Hz     (거의 절반)
+    # 게이트 루프(/safety/state)는 두 지점 모두 심시간 50 Hz 로 멀쩡하다 —
+    # 즉 바뀌는 것은 지각·판단이 아니라 **로코모션**이다.
     #
-    # 비용: 0.25 는 자연 RTF 0.617 대비 시행 벽시계가 ~2.5배다. 0.45 는 상한
-    # 대비 ~35% 마진에 1.4배 비용으로 더 나은 절충이지만, 현 baseline 이 0.25 에서
-    # 수집됐으므로 바꾸려면 재기준화가 필요하다.
+    # 0.45 등가성 검증 실패 (N=5, RTF 0.25 baseline 대비):
+    #     head_on       3/5 — baseline 에 없던 실패 유형(robot_y 밴드 이탈
+    #                   6.35/6.36): 양보 기동이 오버슈트해 연석을 넘는다
+    #     social_yield  2/5 (baseline 8/10)
+    #     bike_head_on_4ms 5/5 (유지 — fast-class 는 판단 지배적이라 둔감)
+    # → 0.25 유지. 회귀 96 시행 실효 RTF 는 최소 0.243·중앙 0.248 로 머신이
+    #   아니라 캡이 구속이었지만, 그 구속이 P4/P5 튜닝의 전제였다.
+    #   캡을 바꾸려면 전 시나리오 재기준화가 필요하다.
     #
-    # P35_RTF_CAP=0 으로 캡을 끌 수 있다 (위 A/B 같은 대조 실험용).
+    # ⚠ 정정 이력: 이전 판은 "캡 없으면 심시간 1.4 Hz 붕괴 / 캡이 게이트 성립
+    # 조건"이라 적었으나 둘 다 오염된 측정이었다(정리 목록에 ekf_node·
+    # state_estimation_node 누락 → 유령 노드 생존). 완전 정리 후 A/B
+    # (static_stop N=3): 캡 O 0/3(0.292~0.353) · 캡 X 0/3(0.302~0.343) —
+    # 구분 불가. 캡은 게이트 성립 조건이 아니다 (l1_to_l2_delta §3.2).
+    #
+    # P35_RTF_CAP: '0' 이면 캡 해제(대조 실험용), 그 외에는 RTF 값으로 해석.
     import os as _os
-    if _os.environ.get('P35_RTF_CAP', '1') == '1':
+    _cap = _os.environ.get('P35_RTF_CAP', str(RTF_CAP))
+    if _cap != '0':
+        _rtf = float(_cap)
         sdf = sdf.replace('<real_time_factor>1</real_time_factor>',
-                          '<real_time_factor>0.25</real_time_factor>')
+                          f'<real_time_factor>{_rtf}</real_time_factor>')
         sdf = sdf.replace('<real_time_update_rate>1000</real_time_update_rate>',
-                          '<real_time_update_rate>250</real_time_update_rate>')
+                          f'<real_time_update_rate>{int(round(_rtf * 1000))}'
+                          f'</real_time_update_rate>')
 
     n_removed = len(ACTOR_BLOCK_RE.findall(sdf))
     sdf = ACTOR_BLOCK_RE.sub('', sdf)
