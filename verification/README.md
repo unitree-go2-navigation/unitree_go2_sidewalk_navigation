@@ -10,14 +10,18 @@ cd ~/unitree_go2_sidewalk_navigation
 source /opt/ros/jazzy/setup.bash && source install/setup.bash
 
 # 전체 회귀 (scenarios/ 전부 × 5회)
-python3 verification/run_scenario.py --all -n 5 --out verification/phase3_regression.csv
+python3 verification/run_scenario.py --all -n 5 --out verification/phase3.5_rebaseline.csv
 
 # 단일 시나리오
 python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml -n 1
 
 # 센서 열화 프로파일 (sim2real 게이트)
 python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml \
-    --degrade verification/profiles/real_l1.yaml -n 3
+    --degrade verification/profiles/real_l2.yaml -n 3
+
+# v2(L1) 재현 — 센서 세대 스위치와 구판 프로파일을 반드시 함께
+python3 verification/run_scenario.py -s verification/scenarios/static_stop.yaml \
+    --degrade verification/profiles/real_l1.yaml -n 3   # + lidar_gen:=l1
 ```
 
 exit code 0 = 전부 PASS. trial별 산출물(월드/oracle CSV/상태 로그/launch 로그)은
@@ -27,11 +31,15 @@ exit code 0 = 전부 PASS. trial별 산출물(월드/oracle CSV/상태 로그/la
 
 - `run_scenario.py` — trial마다 fresh headless Gazebo → 드라이버 실행 → 메트릭 판정
 - `worlds.py` — 기본 월드(small_city.sdf)의 actor를 시나리오 명세로 교체한 변형 생성
+  + RTF 0.25 캡 주입 (Phase 3.5) — 캡이 없으면 심시간 라이다 주기가 붕괴해
+    게이트가 성립하지 않는다 (성능 편의가 아니라 게이트 성립 조건, 함수 주석 참조)
 - `cmd_publisher.py` — 드라이버: 준비 대기(/odom+/obstacles/lidar) → settle →
   cmd 프로파일 재생(sim time) → /safety/state 전이·이동거리 기록
 - `metrics.py` — oracle CSV + 상태 로그 파싱, criteria 평가
 - `scenarios/*.yaml` — 시나리오 정의 (actor 안무, cmd 프로파일, PASS 기준)
-- `profiles/*.yaml` — 센서 열화 프로파일 (real_l1, worst_case)
+- `profiles/*.yaml` — 센서 열화 프로파일. 현행 **real_l2 / worst_case_l2**.
+  real_l1·worst_case는 DEPRECATED(v2 재현 전용) — 시뮬 센서가 이미 L2 공칭
+  포인트율이므로 `lidar_gen:=l1` 없이 얹으면 이중 열화가 된다
 
 ## 시나리오 작성 규칙
 

@@ -1,6 +1,9 @@
-# Self-filter box in base_link frame.
-# L1 LiDAR min range (0.8m) already removes most of the robot body,
-# but this is the safety-net cutoff applied after TF→base_link.
+# Self-filter box in base_link frame — 시뮬 판 (Phase 3.5 재작성, §6.1).
+# L2 설정(min_range 0.05m)부터 센서가 자기 몸통·다리를 실제로 반환한다 —
+# 구판 전제("min range 0.8이 몸체 대부분을 제거")는 사망. 자기 점 차단은
+# ① roi_x_min(전방 크롭)과 ② 이 self box 두 겹이 담당하며, empty 시나리오
+# (보행 중 자기 유래 클러스터 0)가 시뮬 G0 게이트다. 실기체 판(gait 의존
+# 다리 스윙 영역 포함)은 P8'에서 측정 9D로 재조정.
 lidar_obstacle_node:
   ros__parameters:
     # ROI crop (forward obstacle zone)
@@ -18,8 +21,10 @@ lidar_obstacle_node:
     roi_z_max: 1.2
 
     # Self-filter box (base_link frame). Wider than physical body.
-    self_x_min: -0.40
-    self_x_max:  0.40
+    # ∓0.45 (Phase 3.5, 0.40→0.45): 몸통 반장 0.35 + 다리 전후 스윙·마운트
+    # 돌출 0.10. L2 근거리 유입에서 이 박스가 하중을 받는다 (위 헤더).
+    self_x_min: -0.45
+    self_x_max:  0.45
     self_y_min: -0.30
     self_y_max:  0.30
     self_z_min: -0.50
@@ -45,17 +50,20 @@ lidar_obstacle_node:
     target_frame: base_link
     output_topic: /obstacles/lidar
 
-    # Publish rate cap (Hz)
-    publish_rate: 10.0
+    # Publish rate cap (Hz) — L2 수평 스캔 주기와 동일 (Phase 3.5, 10.0→5.55).
+    # 노드 스로틀은 publish_period×0.9라 5.55Hz 입력이 위상 지터에도 매 프레임 통과.
+    publish_rate: 5.55
 
     # 추적 연관 게이트 (m) — CVM 예측 위치 기준 NN 매칭의 허용 오차.
-    # 1.6 (P4, 1.0→1.6): 신규 track(속도 미지)의 부트스트랩은 마지막 위치
-    # 기준이라 고속 물체(≤7m/s, 10Hz)의 프레임당 변위 ~0.75m + 여유 필요.
+    # 2.2 (Phase 3.5, 1.6→2.2): 신규 track(속도 미지)의 부트스트랩은 마지막
+    # 위치 기준이라 고속 물체(≤7m/s)의 프레임당 변위 + 여유 필요 — L2 5.55Hz
+    # 에서 변위 ~1.26m (L1 10Hz의 ~0.75m 대비 재유도, 여유 ~0.9 유지).
     # 기존 track은 예측 매칭이라 오차가 작음. 정적 클러터끼리는 자기 자신
     # (오차 ~0)이 greedy에서 항상 우선이라 교차 연관 위험 낮음.
-    assoc_max_dist: 1.6
+    assoc_max_dist: 2.2
     # 미매칭 track 코스팅 한도 (프레임) — dropout 한두 프레임에 id·속도가
     # 리셋되지 않도록 재연관용으로만 유지 (미발행). real_l1 게이트 근거.
+    # L2 5.55Hz에서 3프레임 = 0.54s (Phase 3.5 재검토 — 값 유지).
     track_coast_frames: 3   # ⚠ 6은 스테일 track의 클러스터 포획 → 유령 fast 지속 (bike_pass 3/5 실측)
     # 클라우드 프레임 누적 (최근 K union, 1=끔). ⚠ 기본 OFF — 고속 물체의
     # 프레임 레이어가 분리 클러스터(유령)가 되어 track을 강탈 (problem.md

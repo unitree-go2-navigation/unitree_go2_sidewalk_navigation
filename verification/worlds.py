@@ -125,6 +125,12 @@ BOX_TEMPLATE = """    <model name="{name}">
 
 ACTOR_BLOCK_RE = re.compile(r'[ \t]*<actor\b.*?</actor>\n', re.DOTALL)
 
+# 회귀 운영점 (generate_world 주석 참조).
+# ⚠ 이 값은 라이다가 아니라 **보행 제어 충실도**가 결정한다 — 올리면 심시간
+# 기준 gait 제어율이 그만큼 떨어져 거동이 바뀐다. 0.45 등가성 검증 실패
+# (l1_to_l2_delta §3.2). 바꾸려면 전 시나리오 재기준화가 필요하다.
+RTF_CAP = 0.25
+
 MIN_SEGMENT_DIST = 0.05   # m
 MIN_SEGMENT_SPEED = 0.02  # m/s
 
@@ -193,6 +199,59 @@ def box_xml(spec):
 def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
+
+    # RTF 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6) — 목적은 **운영점 고정**.
+    #
+    # 출발점은 센서였다: 라이다 update_rate 5.55 는 심 시간 기준 설정값이고,
+    # 게이트 파라미터(TTC·sensor_timeout·fast_trig_frames)도 전부 심 시간 위에서
+    # 돌며, 실기 L2 가 벽시계 5.55 Hz 이므로 시뮬도 심 시간 기준 5.55 Hz 여야 한다.
+    # 그러나 실측해 보니 **캡을 결정하는 것은 센서가 아니라 로코모션**이었다
+    # (측정 1 vs 측정 2).
+    #
+    # 측정 1 — 라이다는 캡을 요구하지 않는다
+    # (2026-08-05, 클린, bike_pass 월드 = GLB 메시 + actor, 최대 부하):
+    #     설정 RTF   실효 RTF   심시간 주기 median/p90
+    #       0.25       0.249        0.180 / 0.180
+    #       0.45       0.442        0.180 / 0.180
+    #       0.60       0.560        0.180 / 0.180
+    #       1.0(무제한) 0.672        0.180 / 0.180
+    # 어느 지점에서도 주기가 열화되지 않는다. gz 는 렌더가 밀리면 프레임을
+    # 버리는 게 아니라 **시뮬 전체를 늦춰** 센서 스케줄을 지키므로, 한계가
+    # "주기 열화"가 아니라 "RTF 포화(이 머신 0.672)"로 나타난다.
+    #
+    # 측정 2 — 🔴 캡을 결정하는 것은 **보행 제어 충실도**다
+    # CHAMP quadruped_controller 는 joint 명령을 **벽시계 고정 ~200 Hz** 로
+    # 낸다 (심 시간 기준이 아니다). 따라서 심시간 실효 제어율이 RTF 에 반비례한다:
+    #     RTF 0.25 → 벽시계 200.3 Hz → 심시간 809 Hz
+    #     RTF 0.45 → 벽시계 201.3 Hz → 심시간 462 Hz     (거의 절반)
+    # 게이트 루프(/safety/state)는 두 지점 모두 심시간 50 Hz 로 멀쩡하다 —
+    # 즉 바뀌는 것은 지각·판단이 아니라 **로코모션**이다.
+    #
+    # 0.45 등가성 검증 실패 (N=5, RTF 0.25 baseline 대비):
+    #     head_on       3/5 — baseline 에 없던 실패 유형(robot_y 밴드 이탈
+    #                   6.35/6.36): 양보 기동이 오버슈트해 연석을 넘는다
+    #     social_yield  2/5 (baseline 8/10)
+    #     bike_head_on_4ms 5/5 (유지 — fast-class 는 판단 지배적이라 둔감)
+    # → 0.25 유지. 회귀 96 시행 실효 RTF 는 최소 0.243·중앙 0.248 로 머신이
+    #   아니라 캡이 구속이었지만, 그 구속이 P4/P5 튜닝의 전제였다.
+    #   캡을 바꾸려면 전 시나리오 재기준화가 필요하다.
+    #
+    # ⚠ 정정 이력: 이전 판은 "캡 없으면 심시간 1.4 Hz 붕괴 / 캡이 게이트 성립
+    # 조건"이라 적었으나 둘 다 오염된 측정이었다(정리 목록에 ekf_node·
+    # state_estimation_node 누락 → 유령 노드 생존). 완전 정리 후 A/B
+    # (static_stop N=3): 캡 O 0/3(0.292~0.353) · 캡 X 0/3(0.302~0.343) —
+    # 구분 불가. 캡은 게이트 성립 조건이 아니다 (l1_to_l2_delta §3.2).
+    #
+    # P35_RTF_CAP: '0' 이면 캡 해제(대조 실험용), 그 외에는 RTF 값으로 해석.
+    import os as _os
+    _cap = _os.environ.get('P35_RTF_CAP', str(RTF_CAP))
+    if _cap != '0':
+        _rtf = float(_cap)
+        sdf = sdf.replace('<real_time_factor>1</real_time_factor>',
+                          f'<real_time_factor>{_rtf}</real_time_factor>')
+        sdf = sdf.replace('<real_time_update_rate>1000</real_time_update_rate>',
+                          f'<real_time_update_rate>{int(round(_rtf * 1000))}'
+                          f'</real_time_update_rate>')
 
     n_removed = len(ACTOR_BLOCK_RE.findall(sdf))
     sdf = ACTOR_BLOCK_RE.sub('', sdf)

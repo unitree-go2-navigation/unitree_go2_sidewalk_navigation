@@ -104,11 +104,18 @@ def generate_launch_description():
         "band_source", default_value="config"
     )
 
+    # 라이다 센서 세대 (Phase 3.5, §6.6): l2 = 5.55Hz/0.05m/480×24 (기본).
+    # l1 = v2 시뮬 설정(10Hz/0.8m/600×30) — L1↔L2 델타 재현용.
+    declare_lidar_gen = DeclareLaunchArgument(
+        "lidar_gen", default_value="l2"
+    )
+
     # Description nodes and parameters
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
         Command(["xacro ", xacro_file,
-                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled")]),
+                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled"),
+                 " lidar_gen:=", LaunchConfiguration("lidar_gen")]),
         value_type=str,
     )
     robot_description = {"robot_description": robot_description_content}
@@ -500,6 +507,7 @@ def generate_launch_description():
             declare_description_path,
             declare_cameras_enabled,
             declare_band_source,
+            declare_lidar_gen,
             gazebo_resource_path,
             small_city_sdf_path,
             gazebo_plugin_path,

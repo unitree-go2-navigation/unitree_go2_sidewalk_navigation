@@ -1,0 +1,13 @@
+# 실제 Unitree L2 근사 프로파일 (Phase 3.5 재기준화 게이트용) — 전 항목 PROVISIONAL.
+# 시뮬 센서가 이미 L2 공칭(5.55Hz / 0.05~30m / 480×24 ≈ 64,000 pts/s)으로
+# 동작하므로(§6.6, lidar_gen:=l2) L1 프로파일과 달리 밀도 감쇠가 불필요.
+# 여기는 gz 라이다가 표현 못 하는 것만 담당(§6.5):
+#   dropout 0.10   비반복 스캔 커버리지 요동 + 저반사 dropout (측정 7A 전 균일 근사)
+#   noise  0.02    스펙 측정 정확도 2cm (거리별 곡선은 측정 7A로 대체 예정)
+#   latency 0.10   파이프라인 지연 가정 (측정 3 실측 p95로 대체 예정)
+degrade_pointcloud_node:
+  ros__parameters:
+    density_keep_ratio: 1.0
+    dropout_ratio: 0.10
+    range_noise_std: 0.02
+    latency_s: 0.10

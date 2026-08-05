@@ -18,12 +18,15 @@
 #                 {module,ctor,attr}       = 클래스 기본값
 #   note          자유 기술
 meta:
-  version: 1
+  version: 2
   plan: collision-unified-rain-v3.md (v3.1.1)
-  updated: "2026-08-01"
+  updated: "2026-08-04"
   note: >
-    시뮬은 Phase 3.5 전까지 L1 설정(10 Hz / min 0.8 m)으로 동작한다.
-    sensor_generation: L1 레코드는 Phase 3.5 재기준화의 전수 재유도 대상이다.
+    Phase 3.5 재기준화 (§9.1): 시뮬 라이다가 L2 설정(5.55 Hz / min 0.05 m /
+    480×24 ≈ 64,000 pts/s, xacro lidar_gen 기본 l2)으로 전환되었고, L1 유도
+    레코드는 전수 L2 재유도되었다. v2(L1) 재현은 lidar_gen:=l1 +
+    profiles/real_l1.yaml(DEPRECATED). 시뮬 유도값은 실기 측정(§8) 전까지
+    PROVISIONAL이다.
 
 parameters:
   # ── 유도 심볼 (코드 미결합 — 재유도식의 입력/출력) ──────────────────
@@ -36,7 +39,7 @@ parameters:
     inputs: {f_scan_hz: 5.55}
     source: "L2 데이터시트 (수평 스캔 5.55 Hz)"
     depends_on: [measurement_06A]
-    note: "시뮬은 Phase 3.5 전까지 L1 10 Hz(0.10 s)로 동작"
+    note: "Phase 3.5부터 시뮬도 L2 5.55 Hz(0.18 s)로 동작"
   T_perception:
     value: 0.015
     status: PROVISIONAL
@@ -134,6 +137,25 @@ parameters:
     status: PROVISIONAL
     basis_tier: 3
     note: "사람 인접 속도 캡 반경 — 코드 리터럴(safety_stop_node, near_front >= 2.5), 상수 미분리"
+  sim_lidar_config:
+    value: {update_rate_hz: 5.55, min_range_m: 0.05, max_range_m: 30.0,
+            h_samples: 480, v_samples: 24}
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "h_samples * v_samples * update_rate ≈ 유효 포인트율"
+    inputs: {effective_point_rate: 64000}
+    source: "L2 데이터시트 (유효 64,000 pts/s, 수평 5.55 Hz) — 480×24×5.55 ≈ 63,936"
+    depends_on: [measurement_05, measurement_06A]
+    note: "lidar_4D_lidar.xacro lidar_gen 인자 (기본 l2, binding 없음 — xacro는 기계 검사 밖). 비반복 스캔·반사율 dropout·밀도 불균일은 real_l2 프로파일 담당 (§6.5)"
+  degrade_profile:
+    value: real_l2
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    source: "verification/profiles/real_l2.yaml (§6.5) — real_l1/worst_case 는 DEPRECATED 보존 (v2 재현용), worst_case_l2 신설"
+    depends_on: [measurement_03, measurement_05, measurement_06A, measurement_07A]
+    note: "keep 1.0 / dropout 0.10 / noise 0.02 / latency 0.10 — 전 항목 실측 전 근사"
 
   # ── safety_stop.yaml 결합 ───────────────────────────────────────────
   robot_half_length:
@@ -172,26 +194,28 @@ parameters:
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: stop_ttc}
     note: "보행자 정지 (시뮬 보정) — §1.4 재유도식의 stop_ttc 심볼은 fast_stop_ttc"
   emergency_clearance:
-    value: 0.60
-    status: INVALID
+    value: 0.30
+    status: PROVISIONAL
     basis_tier: 4
-    sensor_generation: L1
-    formula: "max(sensor_min_range, self_x_max) - robot_half_length + margin"
-    inputs: {sensor_min_range: 0.8, robot_half_length: 0.35, margin: 0.15}
-    source: "L1 사각 유도 — 0.25→0.45→0.60 상향 이력 (yaml 주석, head_on 회귀)"
+    sensor_generation: L2
+    formula: "max(sensor_min_range, self_x_max, roi_x_min) - robot_half_length + margin"
+    inputs: {sensor_min_range: 0.05, self_x_max: 0.45, roi_x_min: 0.5,
+             robot_half_length: 0.35, margin: 0.15}
+    source: "Phase 3.5 L2 재유도 — 사각 경계가 센서 min_range에서 ROI 크롭으로 이동. 이력: 0.25→0.45→0.60 (L1 URDF 0.8 기준)"
     depends_on: [measurement_05, phase_3_5_rebaseline]
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: emergency_clearance}
-    note: "L2(0.05 m)에서 사각 경계가 self-filter 박스로 바뀜 — 완화는 head_on N≥5 재통과 후에만"
+    note: "완화(0.60→0.30)는 head_on·static_stop N≥5 재통과로 유효화 (phase3.5_rebaseline.csv)"
   blind_hold_clearance:
-    value: 0.60
-    status: INVALID
+    value: 0.30
+    status: PROVISIONAL
     basis_tier: 4
-    sensor_generation: L1
-    formula: "max(sensor_min_range, self_x_max) - robot_half_length + margin"
-    inputs: {sensor_min_range: 0.8, robot_half_length: 0.35, margin: 0.15}
+    sensor_generation: L2
+    formula: "max(sensor_min_range, self_x_max, roi_x_min) - robot_half_length + margin"
+    inputs: {sensor_min_range: 0.05, self_x_max: 0.45, roi_x_min: 0.5,
+             robot_half_length: 0.35, margin: 0.15}
     depends_on: [measurement_05, phase_3_5_rebaseline]
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: blind_hold_clearance}
-    note: "L2 재유도 시 ≈0.20 (self_x_max 0.40 기준) — blind-hold 메커니즘 존속 자체 재평가"
+    note: "소실 경계 = ROI 크롭 (clearance 0.15). 실기 min_range 0.05 확정 시 blind-hold 메커니즘 존속 자체 재평가"
   fast_speed_thresh:
     value: 2.0
     status: CONFIRMED
@@ -244,27 +268,37 @@ parameters:
     basis_tier: 3
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_hold_radius}
   cvm_latency_max:
-    value: 0.3
+    value: 0.5
     status: PROVISIONAL
     basis_tier: 4
-    sensor_generation: L1
+    sensor_generation: L2
     formula: "~ T_frame + T_perception + T_transport 상한"
+    inputs: {T_frame: 0.18, degrade_latency: 0.10}
     depends_on: [measurement_03]
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: cvm_latency_max}
-    note: "L2 T_frame 0.18 기준 상한 재검토 (0.4~0.5 후보)"
+    note: "Phase 3.5 재유도 (0.3→0.5) — L2 0.18 + 열화 0.1 + 처리 지연이 0.3을 클립. 실기 측정 3으로 재확정"
   fast_trig_frames:
     value: 4
     status: PENDING
     basis_tier: 3
     depends_on: [measurement_06C]
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_trig_frames}
-    note: "= N_fast (C2). 프레임 단위 — T_frame 의존(④ 성격 겸유). 확정 지연 N·T_frame 이 §1.4 유도식 입력"
+    note: "= N_fast (C2). 프레임 단위 — T_frame 의존(④ 성격 겸유). L2 확정 지연 4×0.18 = 0.72 s (§1.4 표 첫 행). 측정 6C로 재결정"
   fast_max_extent:
     value: 2.2
     status: PROVISIONAL
     basis_tier: 3
     source: "확장 구조물(울타리 파편) 유사속도 차단 — 시뮬 실측"
     binding: {file: safety_stop.yaml, node: safety_stop_node, param: fast_max_extent}
+  sensor_timeout:
+    value: 0.9
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "5 * T_frame"
+    inputs: {T_frame: 0.18}
+    binding: {file: safety_stop.yaml, node: safety_stop_node, param: sensor_timeout}
+    note: "Phase 3.5 재유도 (0.5→0.9) — 구판 0.5는 L2에서 <3프레임 (오탐 blind STOP)"
 
   # ── self_filter.yaml 결합 ───────────────────────────────────────────
   roi_x_min:
@@ -272,20 +306,20 @@ parameters:
     status: PROVISIONAL
     basis_tier: 2
     formula: ">= self_x_max + margin"
-    inputs: {self_x_max: 0.40}
+    inputs: {self_x_max: 0.45}
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_x_min}
-    note: "하향(근거리 활용)은 측정 8·Phase 6' 판단과 연동 (v3.1.1 등재)"
+    note: "L2에서 근거리 사각의 실효 경계 (emergency/blind_hold 유도 입력). 하향(근거리 활용)은 측정 8·Phase 6' 판단과 연동"
   roi_x_max:
     value: 15.0
-    status: INVALID
+    status: PROVISIONAL
     basis_tier: 4
-    sensor_generation: L1
+    sensor_generation: L2
     formula: "v_rel * (fast_stop_ttc + T_total)"
     constraint: "<= R_confirm_p10"
     inputs: {v_rel: 5.5, fast_stop_ttc: 2.0, T_total_v2: 0.15}
     depends_on: [measurement_03, measurement_05, measurement_06, measurement_07, measurement_09]
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_x_max}
-    note: "= ROI_fast. L2 재유도 시 필요 17.6 m > 가용 15 m — v_robot_max 하향으로 해소 (§1.4 ③)"
+    note: "= ROI_fast. L2 재유도 필요 17.6 m > 가용 15 m(10% 반사율) — 미해소, v_robot_max 하향(§1.4 ③)으로 해소 예정. 시뮬 진행값 (§9.2 항목 6, PROVISIONAL)"
   roi_z_max:
     value: 1.2
     status: UNVERIFIED
@@ -293,38 +327,50 @@ parameters:
     depends_on: [measurement_08B]
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: roi_z_max}
   self_filter_box:
-    value: {self_x_min: -0.40, self_x_max: 0.40, self_y_min: -0.30,
+    value: {self_x_min: -0.45, self_x_max: 0.45, self_y_min: -0.30,
             self_y_max: 0.30, self_z_min: -0.50, self_z_max: 0.25}
-    status: INVALID
+    status: PROVISIONAL
     basis_tier: 4
-    sensor_generation: L1
+    sensor_generation: L2
+    formula: "x: robot_half_length + 다리 전후 스윙·마운트 0.10 / y: leg_swing_width/2 + 0.05"
+    inputs: {robot_half_length: 0.35, leg_swing_width: 0.5}
     depends_on: [measurement_09D, gate_G0]
     binding: {file: self_filter.yaml, node: lidar_obstacle_node,
               params: [self_x_min, self_x_max, self_y_min, self_y_max, self_z_min, self_z_max]}
-    note: "L2 0.05 m 블라인드 → §6.1 전면 재작성 (다리 스윙 영역 포함). G0 통과 전 실기체 측정 전면 불가"
+    note: "Phase 3.5 시뮬 판 재작성 (§6.1, x ∓0.40→0.45) — empty 시나리오(보행 중 자기 클러스터 0)가 시뮬 G0. 실기체 판(gait 의존)은 P8'에서 재조정, G0 통과 전 실기체 측정 전면 불가"
   track_coast_frames:
     value: 3
     status: PROVISIONAL
     basis_tier: 3
-    sensor_generation: L1
+    sensor_generation: L2
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: track_coast_frames}
-    note: "프레임 단위 — 5.55 Hz 에서 코스팅 0.3→0.54 s 로 변함 (Phase 3.5 재검토). 6 상향 금지 (유령 fast 실측)"
+    note: "프레임 단위 — L2 5.55 Hz 코스팅 0.54 s (Phase 3.5 재검토: 값 유지, vel_max_dt 0.8로 재연관 속도 갱신 보장). 6 상향 금지 (유령 fast 실측)"
   assoc_max_dist:
-    value: 1.6
+    value: 2.2
     status: PROVISIONAL
     basis_tier: 3
-    sensor_generation: L1
+    sensor_generation: L2
     formula: "~ v_max * T_frame + margin"
-    inputs: {v_max: 7.0, T_frame_l1: 0.10}
+    inputs: {v_max: 7.0, T_frame_l2: 0.18, margin: 0.9}
     depends_on: [measurement_06B]
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: assoc_max_dist}
-    note: "L2 5.55 Hz 면 프레임당 변위 2배 — Phase 3.5 재유도"
+    note: "Phase 3.5 재유도 (1.6→2.2) — L2 프레임당 변위 ~1.26 m + 여유 0.9"
   accum_frames:
     value: 1
     status: CONFIRMED
     basis_tier: 3
     source: "유령 클러스터의 track 강탈 실측 (problem.md 2026-07-16) — 켜기 전 재검토 필수"
     binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: accum_frames}
+  publish_rate:
+    value: 5.55
+    status: PROVISIONAL
+    basis_tier: 4
+    sensor_generation: L2
+    formula: "= f_scan"
+    inputs: {f_scan_hz: 5.55}
+    depends_on: [measurement_06A]
+    binding: {file: self_filter.yaml, node: lidar_obstacle_node, param: publish_rate}
+    note: "Phase 3.5 (10.0→5.55) — 입력 스로틀은 period×0.9라 매 프레임 통과"
 
   # ── safety_stop_node 모듈 상수 (C3 이관 시 social_gap_node 로 이사) ──
   yield_ground_approach:

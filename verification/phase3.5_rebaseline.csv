@@ -1,0 +1,72 @@
+scenario,degrade,trial,pass,min_clearance,collisions,stop_entries,travel_m,states,failures,run_dir
+bike_head_on,-,1,PASS,0.5046,0,2,8.870,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_1_1785832444
+bike_head_on,-,2,PASS,0.4353,0,2,8.929,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_2_1785832593
+bike_head_on,-,3,PASS,0.4301,0,2,8.852,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_3_1785832740
+bike_head_on,-,4,PASS,0.4594,0,3,8.849,SLOW_DOWN/STOP/WAIT/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4_1785832888
+bike_head_on,-,5,PASS,0.4433,0,2,8.850,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_5_1785833036
+bike_head_on_4ms,-,1,PASS,0.4920,0,3,8.705,SLOW_DOWN/STOP/WAIT/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_1_1785833185
+bike_head_on_4ms,-,2,PASS,0.3988,0,2,8.746,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_2_1785833333
+bike_head_on_4ms,-,3,PASS,0.4466,0,1,8.509,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_3_1785833481
+bike_head_on_4ms,-,4,PASS,0.4072,0,1,8.603,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_4_1785833629
+bike_head_on_4ms,-,5,PASS,0.4229,0,3,8.794,SLOW_DOWN/STOP/WAIT/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_5_1785833776
+bike_pass,-,1,PASS,0.8605,0,0,9.894,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_pass_1_1785842934
+bike_pass,-,2,PASS,0.8813,0,0,9.883,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_pass_2_1785843082
+bike_pass,-,3,PASS,0.8579,0,0,9.882,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_pass_3_1785843229
+bike_pass,-,4,PASS,0.9119,0,0,9.883,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_pass_4_1785843376
+bike_pass,-,5,PASS,0.8714,0,0,9.881,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_pass_5_1785843523
+crossing,-,1,PASS,0.5769,0,0,10.172,SLOW_DOWN/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/crossing_1_1785834982
+crossing,-,2,PASS,0.6679,0,1,8.470,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/crossing_2_1785835149
+crossing,-,3,PASS,0.6889,0,2,8.102,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/crossing_3_1785835320
+crossing,-,4,PASS,0.7251,0,1,8.553,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/crossing_4_1785835486
+crossing,-,5,PASS,0.5471,0,0,9.830,SLOW_DOWN/NOMINAL/SLOW_DOWN/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/crossing_5_1785835655
+empty,-,1,PASS,inf,0,0,9.880,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/empty_1_1785835821
+empty,-,2,PASS,inf,0,0,9.890,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/empty_2_1785835968
+empty,-,3,PASS,inf,0,0,9.895,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/empty_3_1785836114
+empty,-,4,PASS,inf,0,0,9.905,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/empty_4_1785836261
+empty,-,5,PASS,inf,0,0,9.882,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/empty_5_1785836408
+head_on,-,1,PASS,0.7766,0,0,3.618,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/NOMINAL/SLOW_DOWN,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/head_on_1_1785836555
+head_on,-,2,PASS,0.5871,0,0,3.580,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/head_on_2_1785836703
+head_on,-,3,PASS,0.8650,0,0,3.535,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/head_on_3_1785836850
+head_on,-,4,PASS,0.6351,0,0,3.612,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/head_on_4_1785836998
+head_on,-,5,PASS,0.7763,0,0,3.578,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/head_on_5_1785837144
+narrow_gap_refuse,-,1,PASS,0.2126,0,1,5.296,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/narrow_gap_refuse_1_1785837292
+narrow_gap_refuse,-,2,PASS,0.2178,0,1,5.255,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/narrow_gap_refuse_2_1785837459
+narrow_gap_refuse,-,3,PASS,0.2189,0,1,5.342,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/narrow_gap_refuse_3_1785837626
+narrow_gap_refuse,-,4,PASS,0.2387,0,1,5.002,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/narrow_gap_refuse_4_1785837794
+narrow_gap_refuse,-,5,PASS,0.2330,0,1,5.168,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/narrow_gap_refuse_5_1785837961
+social_box_diag,-,1,PASS,0.2881,0,1,7.321,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_box_diag_1_1785838129
+social_box_diag,-,2,PASS,0.2428,0,1,7.315,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_box_diag_2_1785838320
+social_box_diag,-,3,PASS,0.3152,0,1,7.303,SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_box_diag_3_1785838511
+social_box_diag,-,4,PASS,0.2482,0,2,7.669,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_box_diag_4_1785838702
+social_box_diag,-,5,PASS,0.3209,0,1,7.662,SLOW_DOWN/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_box_diag_5_1785838892
+social_offset_ped,-,1,PASS,0.3140,0,0,12.656,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_offset_ped_1_1785839084
+social_offset_ped,-,2,PASS,0.3080,0,0,12.609,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_offset_ped_2_1785839259
+social_offset_ped,-,3,PASS,0.3464,0,0,12.659,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_offset_ped_3_1785839434
+social_offset_ped,-,4,PASS,0.2229,0,0,12.685,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_offset_ped_4_1785839608
+social_offset_ped,-,5,PASS,0.3986,0,0,12.623,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_offset_ped_5_1785839783
+social_two_peds,-,1,PASS,0.2712,0,0,12.441,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_two_peds_1_1785839958
+social_two_peds,-,2,PASS,0.2728,0,0,12.268,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_two_peds_2_1785840133
+social_two_peds,-,3,PASS,0.2577,0,0,11.936,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_two_peds_3_1785840307
+social_two_peds,-,4,PASS,0.2541,0,0,12.272,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_two_peds_4_1785840482
+social_two_peds,-,5,PASS,0.2092,0,0,12.495,,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_two_peds_5_1785840657
+social_yield,-,1,PASS,0.2072,0,1,8.277,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_1_1785840831
+social_yield,-,2,FAIL,0.0482,0,1,8.229,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,min_clearance 0.048 <= 0.1,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_2_1785841063
+social_yield,-,3,PASS,0.2343,0,1,8.040,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_3_1785841294
+social_yield,-,4,PASS,0.1959,0,1,8.128,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_4_1785841526
+social_yield,-,5,PASS,0.2481,0,1,8.424,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_5_1785841757
+social_yield,-,6,PASS,0.2294,0,1,7.963,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_1_1785844660
+social_yield,-,7,FAIL,0.0449,0,3,7.885,YIELD_MOVE/YIELD_WAIT/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL/YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,min_clearance 0.045 <= 0.1,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_2_1785844892
+social_yield,-,8,PASS,0.2423,0,1,7.925,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_3_1785845123
+social_yield,-,9,PASS,0.1091,0,2,9.045,YIELD_MOVE/YIELD_WAIT/STOP/WAIT/RESUME/NOMINAL/YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_4_1785845355
+social_yield,-,10,PASS,0.2394,0,1,7.942,YIELD_MOVE/YIELD_WAIT/RESUME/NOMINAL/SLOW_DOWN/STOP,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/social_yield_5_1785845587
+static_stop,-,1,PASS,0.3635,0,0,10.136,SLOW_DOWN/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_1_1785841988
+static_stop,-,2,FAIL,0.3261,0,0,10.329,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_2_1785842154
+static_stop,-,3,FAIL,0.3837,0,0,10.131,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_3_1785842321
+static_stop,-,4,FAIL,0.3605,0,0,10.266,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_4_1785842488
+static_stop,-,5,FAIL,0.3187,0,0,10.402,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_5_1785842655
+static_stop,real_l2.yaml,1,FAIL,0.3477,0,0,10.064,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_1_1785843674
+static_stop,real_l2.yaml,2,FAIL,0.3249,0,0,10.172,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_2_1785843841
+static_stop,real_l2.yaml,3,FAIL,0.3687,0,0,10.459,,state SLOW_DOWN never entered (saw ),/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/static_stop_3_1785844008
+bike_head_on_4ms,real_l2.yaml,1,PASS,0.3676,0,1,9.074,SLOW_DOWN/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_1_1785844179
+bike_head_on_4ms,real_l2.yaml,2,PASS,0.4171,0,2,8.749,SLOW_DOWN/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_2_1785844327
+bike_head_on_4ms,real_l2.yaml,3,PASS,0.4083,0,3,8.829,SLOW_DOWN/STOP/WAIT/STOP/WAIT/STOP/WAIT/RESUME/NOMINAL,,/home/sangw/unitree_go2_sidewalk_navigation/.claude/worktrees/phase3-5-l2-rebaseline/verification/runs/bike_head_on_4ms_3_1785844475
