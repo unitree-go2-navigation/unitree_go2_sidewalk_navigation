@@ -77,10 +77,16 @@ def generate_launch_description():
         description="Path to the robot description xacro file",
     )
     
+    # 눈높이 POV 카메라 토글 (기본 OFF — 렌더 스레드를 L1 라이다에 양보)
+    declare_head_cam_enabled = DeclareLaunchArgument(
+        "head_cam_enabled", default_value="false"
+    )
+
     # Description nodes and parameters
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
-        Command(["xacro ", xacro_file]),
+        Command(["xacro ", xacro_file,
+                 " head_cam_enabled:=", LaunchConfiguration("head_cam_enabled")]),
         value_type=str,
     )
     robot_description = {"robot_description": robot_description_content}
@@ -257,7 +263,9 @@ def generate_launch_description():
             # '/velodyne_points@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
             '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
             '/rgb_image@sensor_msgs/msg/Image@gz.msgs.Image',
-            
+            # 눈높이 POV 카메라 (head_cam_enabled:=true 일 때만 데이터가 흐름)
+            '/head_cam/image@sensor_msgs/msg/Image[gz.msgs.Image',
+
             # ROS to Gazebo
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
             '/joint_group_controller/commands@std_msgs/msg/Float64MultiArray]gz.msgs.Double_V',
@@ -324,7 +332,8 @@ def generate_launch_description():
             declare_world_init_roll,
             declare_world_init_pitch,
             declare_world_init_heading,
-            declare_description_path, 
+            declare_description_path,
+            declare_head_cam_enabled,
             gazebo_resource_path,
             
             # Gazebo and robot nodes first

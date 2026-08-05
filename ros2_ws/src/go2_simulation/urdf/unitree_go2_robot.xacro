@@ -118,6 +118,23 @@
         <origin rpy="0 -0.05 0" xyz="0.34 0 0.06"/>
     </joint>
 
+    <!-- 눈높이 POV 카메라 링크 (visual/collision 미정의 = Gazebo/RViz에 형상 없음).
+         z = 1.6(사람 눈높이) - 0.225(nominal_height, trunk 원점 지상고).
+         mass는 fixed joint lumping 시 trunk 관성에 m*d^2로 더해지므로 1e-5로 둔다
+         (1e-5*1.375^2 = trunk_ixx 0.02448의 0.08%). -->
+    <link name="head_cam_link">
+        <inertial>
+            <mass value="1e-5"/>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <inertia ixx="1e-9" ixy="0" ixz="0" iyy="1e-9" iyz="0" izz="1e-9"/>
+        </inertial>
+    </link>
+    <joint name="head_cam_joint" type="fixed">
+        <parent link="trunk"/>
+        <child link="head_cam_link"/>
+        <origin rpy="0 0 0" xyz="0 0 1.375"/>
+    </joint>
+
 
 
     <!-- <joint name="lidar_l1_joint" type="fixed">

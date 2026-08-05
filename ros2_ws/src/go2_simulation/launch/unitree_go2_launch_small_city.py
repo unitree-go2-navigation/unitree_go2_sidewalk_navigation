@@ -99,6 +99,11 @@ def generate_launch_description():
         "cameras_enabled", default_value="true"
     )
 
+    # 눈높이 POV 카메라 토글 (기본 OFF — 렌더 스레드를 L1 라이다에 양보)
+    declare_head_cam_enabled = DeclareLaunchArgument(
+        "head_cam_enabled", default_value="false"
+    )
+
     # 보도 밴드 출처: config(사전 정의, 회귀 재현성) | lidar(실시간 추정)
     declare_band_source = DeclareLaunchArgument(
         "band_source", default_value="config"
@@ -108,7 +113,8 @@ def generate_launch_description():
     xacro_file = LaunchConfiguration("unitree_go2_description_path")
     robot_description_content = ParameterValue(
         Command(["xacro ", xacro_file,
-                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled")]),
+                 " cameras_enabled:=", LaunchConfiguration("cameras_enabled"),
+                 " head_cam_enabled:=", LaunchConfiguration("head_cam_enabled")]),
         value_type=str,
     )
     robot_description = {"robot_description": robot_description_content}
@@ -410,6 +416,9 @@ def generate_launch_description():
             '/d435i/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
             '/d435i/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
 
+            # 눈높이 POV 카메라 (head_cam_enabled:=true 일 때만 데이터가 흐름)
+            '/head_cam/image@sensor_msgs/msg/Image[gz.msgs.Image',
+
             # ROS to Gazebo
             # NOTE: /cmd_vel→gz.msgs.Twist 브리지는 제거됨 — position control에서
             # 구동은 /cmd_vel_safe→CHAMP→joint 명령 경로뿐이며, 이 브리지는
@@ -499,6 +508,7 @@ def generate_launch_description():
             declare_world_init_heading,
             declare_description_path,
             declare_cameras_enabled,
+            declare_head_cam_enabled,
             declare_band_source,
             gazebo_resource_path,
             small_city_sdf_path,

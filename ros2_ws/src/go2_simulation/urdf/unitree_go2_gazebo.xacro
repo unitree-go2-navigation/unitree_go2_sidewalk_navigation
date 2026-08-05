@@ -208,6 +208,36 @@
   </gazebo>
   </xacro:if>
 
+  <!-- 눈높이 POV 카메라 (지상 ~1.6m, 전방 수평). 형상 없는 head_cam_link에 부착.
+       640x480@30 = 27.6MB/s 리드백으로 위 d435i_color(720p@15, 41.5MB/s)보다 가볍지만,
+       렌더 스레드는 L1 라이다와 공유하므로 기본 OFF — 데모/POV 때만 켠다. -->
+  <xacro:arg name="head_cam_enabled" default="false"/>
+  <xacro:if value="$(arg head_cam_enabled)">
+  <gazebo reference="head_cam_link">
+    <sensor name="head_cam" type="camera">
+      <pose>0 0 0 0 0 0</pose>
+      <update_rate>30</update_rate>
+      <always_on>1</always_on>
+      <visualize>0</visualize>
+      <topic>head_cam/image</topic>
+      <gz_frame_id>head_cam_link</gz_frame_id>
+      <camera>
+        <!-- 80 deg = 1.396 rad (사람 시야에 가까운 광각) -->
+        <horizontal_fov>1.396</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>200.0</far>
+        </clip>
+      </camera>
+    </sensor>
+  </gazebo>
+  </xacro:if>
+
   <!-- Main body -->
   <gazebo reference="trunk">
     <mu1>0.2</mu1>
