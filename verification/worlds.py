@@ -194,20 +194,37 @@ def generate_world(base_sdf_path, actors, out_path, scenario_name=''):
     with open(base_sdf_path) as f:
         sdf = f.read()
 
-    # RTF 0.25 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6).
-    # 원본 small_city.sdf에는 캡이 없어 머신이 한가하면 RTF가 떠오르고(실측
-    # 0.50), 요구 벽시계 렌더율이 GPU 라이다 상한(~2.5Hz)을 넘어 심시간 라이다
-    # 주기가 붕괴한다(실측 ~1.4~1.7Hz). L1 시절엔 풀스택 부하가 RTF를
-    # 0.13~0.33으로 눌러줘 우연히 성립했을 뿐이라 캡이 명시돼 있지 않았다.
-    # 0.25 캡에서 L2 5.55Hz는 심시간 주기 중앙값 0.180s로 정합.
-    # A/B 실측 (2026-08-04, static_stop, 클린 환경):
-    #   캡 O → PASS  SLOW_DOWN 진입, min_clr 0.409
-    #   캡 X → FAIL  SLOW_DOWN 미진입, 보행자를 0.316m로 스쳐 지나감
-    # 즉 캡은 성능 편의가 아니라 게이트 성립 조건이다. 게이트 튜닝은 이 운영점 기준.
-    sdf = sdf.replace('<real_time_factor>1</real_time_factor>',
-                      '<real_time_factor>0.25</real_time_factor>')
-    sdf = sdf.replace('<real_time_update_rate>1000</real_time_update_rate>',
-                      '<real_time_update_rate>250</real_time_update_rate>')
+    # RTF 0.25 캡 주입 (Phase 3.5 RTF 운영점 재유도, §6.6) — 목적은 **운영점 고정**.
+    #
+    # 맞춰야 하는 것은 RTF 가 아니라 심시간 라이다 주기(L2 = 0.18 s)다. 관계는
+    #     심시간 라이다 주파수 = C / RTF      (C = GPU 벽시계 라이다 렌더율)
+    # 이므로 5.55 Hz 를 얻으려면 RTF <= C / 5.55 여야 한다.
+    #
+    # 실측 (2026-08-05, 클린 환경, 원본 월드 = 캡 없음):
+    #     실측 RTF 0.617 · 심시간 주기 median/p90 0.180 s → 5.56 Hz (설정값 그대로)
+    #   → C >= 5.55 * 0.617 ~= 3.4 Hz, 허용 상한 RTF <= ~0.61
+    # 즉 이 머신은 캡 없이도 목표 주기가 나오지만, 자연 안착 RTF(0.617)가 상한에
+    # 거의 걸쳐 있어 부하가 늘면 C 가 떨어지며 주기가 무너진다. 캡은 그 마진을
+    # 사는 것이고, 부하와 무관하게 회귀 운영점을 재현 가능하게 만든다.
+    #
+    # ⚠ 정정: 이전 판 주석은 "캡 없으면 심시간 1.4 Hz 로 붕괴 / 캡이 게이트 성립
+    # 조건"이라고 적었으나 **둘 다 오염된 측정이었다** — 당시 정리 목록에
+    # ekf_node·state_estimation_node 가 빠져 유령 노드가 살아 있었다.
+    # 완전 정리 후 A/B (static_stop N=3): 캡 O 0/3(이격 0.292~0.353) ·
+    # 캡 X 0/3(0.302~0.343) — 판정·이격 모두 구분 불가. 캡은 게이트 성립 조건이
+    # 아니다. (static_stop 자체의 실패는 캡과 무관한 거동 변화 — l1_to_l2_delta §5.2)
+    #
+    # 비용: 0.25 는 자연 RTF 0.617 대비 시행 벽시계가 ~2.5배다. 0.45 는 상한
+    # 대비 ~35% 마진에 1.4배 비용으로 더 나은 절충이지만, 현 baseline 이 0.25 에서
+    # 수집됐으므로 바꾸려면 재기준화가 필요하다.
+    #
+    # P35_RTF_CAP=0 으로 캡을 끌 수 있다 (위 A/B 같은 대조 실험용).
+    import os as _os
+    if _os.environ.get('P35_RTF_CAP', '1') == '1':
+        sdf = sdf.replace('<real_time_factor>1</real_time_factor>',
+                          '<real_time_factor>0.25</real_time_factor>')
+        sdf = sdf.replace('<real_time_update_rate>1000</real_time_update_rate>',
+                          '<real_time_update_rate>250</real_time_update_rate>')
 
     n_removed = len(ACTOR_BLOCK_RE.findall(sdf))
     sdf = ACTOR_BLOCK_RE.sub('', sdf)
